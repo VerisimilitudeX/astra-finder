@@ -26,13 +26,37 @@ from the same SCP page — needed **only** for the `with_systematics`
 universe; the default `baseline` universe uses diagonal errors only, so
 the covmat file is not required to run the default path.
 
-**Implementation status.** Not written yet. The recipes reference
-`src/fit.py` (runs the fit → `fit_result`), `src/report.py` (extracts a
-scalar metric from `fit_result`), `src/plot_hubble.py`, and
-`src/plot_contour.py`. `fit_result` is the shared intermediate — the fit
-runs once; metrics and plots derive from it. Every decision must be
-parameterized via its CLI flag (`--method`, `--offset`, `--errors`,
-`--zcut`), never hardcoded.
+**Implementation status.** Implemented and materialized (baseline).
+`src/cosmology.py` holds the physics + chi-square machinery; `src/fit.py`
+runs the fit → `fit_result` (chi-square grid / optimizer / MCMC per
+`--method`), `src/report.py` extracts a scalar metric, and
+`src/plot_hubble.py` / `src/plot_contour.py` make the figures.
+`fit_result` is the shared intermediate — the fit runs once; metrics and
+plots derive from it. Every decision is parameterized via its CLI flag
+(`--method`, `--offset`, `--errors`, `--zcut`). Baseline result:
+Omega_Lambda = 0.722 ± 0.019, H0 = 70.0 ± 0.34, chi2/dof = 0.97 (580 SNe).
+
+**Running (IMPORTANT — environment gotcha).** Use the conda `lc`, not the
+project `.venv` one:
+
+```bash
+# The .venv (lightcone-cli 0.3.7) is auto-activated and shadows conda on
+# PATH, but it is NOT hub-aware and its snakemake breaks the Dask-Gateway
+# executor (DASK_SCHEDULER_ADDRESS unset / python-version split). Run lc
+# from a clean conda-first env instead:
+env -u VIRTUAL_ENV -u PYTHONPATH PATH="/opt/conda/bin:/usr/bin:/bin" \
+    /opt/conda/bin/lc run --universe baseline
+```
+
+`/opt/conda/bin/lc` is 0.3.8.dev (hub-aware): `lc build` drives the image
+build through the hub BinderHub service (no local docker needed) and
+pushes it to the deployment registry; `lc run` starts the Gateway cluster
+with that image. The **Containerfile must base on the hub worker image**
+(`lightcone-worker-default`) so the built image is Gateway-compatible —
+do not revert it to `python:3.12-slim`. `lc build` auto-commits and
+pushes environment-file changes, so the code must be committed (the build
+pod clones the repo from GitHub). For quick local physics checks only,
+`/opt/conda/bin/python` has numpy/scipy/pandas/matplotlib.
 
 ## lightcone-cli workflow
 
