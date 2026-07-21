@@ -1,20 +1,9 @@
-FROM python:3.12-slim
+# Per-project environment for the lightcone-hub deployment: base on the
+# deployment's worker image (dask/dask-gateway/snakemake/lightcone-cli at
+# hub-matching versions) and add science deps on top. The Gateway worker
+# pod image IS the recipe environment, so recipes run unwrapped inside it;
+# the project itself is mounted into the worker (no COPY needed here).
+FROM europe-west1-docker.pkg.dev/lightconehub/lightcone/lightcone-worker-default:2026.07.12
 
-# uv, pulled from its official image (fast, reproducible, no curl bootstrap).
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-WORKDIR /app
-
-# On a Kubernetes / Dask Gateway deployment the pod image IS the execution
-# environment, so it must contain lightcone-cli. Installing it here also pulls
-# dask, distributed, and the dask-gateway client at pinned, hub-matching
-# versions, so this image doubles as a valid Gateway worker. Add project
-# dependencies to requirements.txt.
-#
-# --system installs into the image's Python (no venv in a container), which
-# also puts dask-worker / dask-gateway-scheduler on PATH where the Gateway
-# backend launches them by name.
-COPY requirements.txt .
-RUN uv pip install --system --no-cache "lightcone-cli[gateway]" -r requirements.txt
-
-COPY . .
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt

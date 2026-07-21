@@ -1,44 +1,207 @@
 # ASTRA Analysis Specification
 
 version: "0.0.11"
-name: "new_experiment"
+name: "Union2.1 Flat LCDM Fit"
 container: Containerfile
 description: |
-  TODO: One-paragraph overview of the analysis — its question,
-  scope, and what the reader should take away. A richer write-up
-  (figures, citations, multi-page structure) is authored separately
-  as a report that references this analysis's elements; see the
-  ASTRA documentation.
+  Fits the Supernova Cosmology Project Union2.1 Hubble diagram
+  (distance modulus mu vs redshift z for 580 SNe Ia) with a flat
+  Lambda-CDM model, constraining the two free parameters H0 and
+  Omega_Lambda (with Omega_m = 1 - Omega_Lambda). A single fit produces
+  the chi-square surface / posterior over (Omega_Lambda, H0), from which
+  the analysis reports best-fit H0 and Omega_Lambda with uncertainties,
+  the Hubble diagram with the best-fit model overlaid, and the 68%/95%
+  confidence contours.
+
+  Because SNe Ia alone constrain only Omega_Lambda and the degenerate
+  combination M - 5 log10(H0), the absolute-magnitude offset is
+  marginalized by default; the tracked decisions cover the inference
+  method, this offset treatment, the error model (diagonal vs full
+  systematic covariance), and low-redshift sample selection.
 
 inputs:
-  - id: primary_data
+  - id: union21_mu
     type: data
-    description: "TODO: Describe your primary data source"
+    label: "Union2.1 mu(z) table"
+    source: "data/SCPUnion2.1_mu_vs_z.txt"
+    description: >-
+      The Supernova Cosmology Project Union2.1 compilation: distance
+      modulus mu and its per-supernova uncertainty as a function of
+      redshift z (one row per SN Ia).
+
+  - id: union21_covmat
+    type: data
+    label: "Union2.1 systematic covariance"
+    source: "data/SCPUnion2.1_covmat_sys.txt"
+    description: >-
+      The full Union2.1 covariance matrix including systematic-error
+      correlations between supernovae. Consumed only when the error
+      treatment includes systematics; ignored otherwise.
 
 outputs:
-  - id: main_result
-    type: metric
-    description: "TODO: Describe your primary output metric"
-    decisions: [example_method]
+  - id: fit_result
+    type: data
+    label: "Cosmological fit result"
+    description: >-
+      Core computation. Fits flat LCDM (Omega_m = 1 - Omega_Lambda) to
+      the Union2.1 Hubble diagram over the two free parameters
+      (Omega_Lambda, H0) and stores the chi-square surface / posterior
+      together with the best-fit point and its covariance. All metrics
+      and plots below derive from this artifact so the fit runs once.
+    inputs: [union21_mu, union21_covmat]
+    decisions: [inference_method, offset_treatment, error_treatment, redshift_cut]
     recipe:
-      command: python src/main.py --method {decisions.example_method} --out {output}
+      command: >-
+        python src/fit.py
+        --data {inputs.union21_mu}
+        --covmat {inputs.union21_covmat}
+        --method {decisions.inference_method}
+        --offset {decisions.offset_treatment}
+        --errors {decisions.error_treatment}
+        --zcut {decisions.redshift_cut}
+        --out {output}
 
-  - id: conclusion
-    type: report
-    description: "Summary of analysis findings"
-    inputs: [main_result]
+  - id: h0_estimate
+    type: metric
+    label: "H0 best fit"
+    description: >-
+      Best-fit Hubble constant H0 (km/s/Mpc) with its 68% uncertainty,
+      extracted from the fit result.
+    inputs: [fit_result]
     recipe:
-      command: python src/main.py --result {inputs.main_result} --out {output}
+      command: >-
+        python src/report.py --fit {inputs.fit_result} --quantity h0 --out {output}
+
+  - id: omega_lambda_estimate
+    type: metric
+    label: "Omega_Lambda best fit"
+    description: >-
+      Best-fit dark-energy density parameter Omega_Lambda with its 68%
+      uncertainty, extracted from the fit result.
+    inputs: [fit_result]
+    recipe:
+      command: >-
+        python src/report.py --fit {inputs.fit_result} --quantity omega_lambda --out {output}
+
+  - id: hubble_diagram
+    type: figure
+    label: "Hubble diagram"
+    description: >-
+      Distance modulus mu vs redshift z: Union2.1 data points with
+      error bars, overlaid with the best-fit flat-LCDM model curve.
+    inputs: [union21_mu, fit_result]
+    recipe:
+      command: >-
+        python src/plot_hubble.py --data {inputs.union21_mu} --fit {inputs.fit_result} --out {output}
+
+  - id: confidence_contour
+    type: figure
+    label: "Confidence contour"
+    description: >-
+      68% and 95% confidence regions in the (Omega_Lambda, H0) plane,
+      with the best-fit point marked.
+    inputs: [fit_result]
+    recipe:
+      command: >-
+        python src/plot_contour.py --fit {inputs.fit_result} --out {output}
 
 decisions:
-  example_method:
-    label: "Example Method Choice"
-    rationale: "TODO: Explain why this decision matters"
-    default: option_a
+  inference_method:
+    label: "Inference Method"
+    tags: [stats]
+    rationale: >-
+      How the two-parameter posterior is explored. For a 2D problem all
+      three options are defensible and should agree closely; they differ
+      in how uncertainties and confidence regions are produced.
+    default: grid_scan
     options:
-      option_a:
-        label: "Option A"
-        description: "TODO: Describe option A"
-      option_b:
-        label: "Option B"
-        description: "TODO: Describe option B"
+      grid_scan:
+        label: "Chi-square grid scan"
+        description: >-
+          Evaluate chi-square on a dense 2D grid over (Omega_Lambda, H0);
+          best fit is the grid minimum and confidence regions come from
+          delta-chi-square contours. Exact and robust in low dimension.
+      optimizer:
+        label: "Numerical optimizer"
+        description: >-
+          Minimize chi-square with a numerical optimizer (e.g. Nelder-Mead
+          or L-BFGS); parameter uncertainties from the Hessian / Fisher
+          matrix at the minimum.
+      mcmc:
+        label: "MCMC sampling"
+        description: >-
+          Sample the posterior with MCMC (e.g. emcee); point estimates and
+          credible intervals from the marginalized chains.
+
+  offset_treatment:
+    label: "Absolute-Offset Treatment"
+    tags: [calibration]
+    rationale: >-
+      SNe Ia constrain Omega_Lambda together with the combination
+      M - 5 log10(H0): H0 is degenerate with the absolute magnitude M.
+      The Union2.1 mu values are published with a fiducial calibration
+      (M for h = 0.7). Trusting that calibration (fixed) makes H0
+      measurable; adding a free magnitude offset (profiling /
+      marginalization) removes the calibration information and leaves
+      only Omega_Lambda constrained, with H0 degenerate. This decision
+      therefore sets whether H0 is recovered at all.
+    default: fixed
+    options:
+      fixed:
+        label: "Fixed absolute magnitude"
+        description: >-
+          Trust the published Union2.1 absolute calibration: no free
+          magnitude offset. Fits H0 directly against the mu values,
+          yielding a joint 2D constraint on (Omega_Lambda, H0). This is
+          the only treatment under which H0 is meaningfully recovered.
+      profiling:
+        label: "Profile the offset"
+        description: >-
+          Add a free constant magnitude offset and analytically minimize
+          chi-square over it at each grid point (profile likelihood).
+          Isolates Omega_Lambda; H0 becomes degenerate with the offset.
+      analytic_marginalization:
+        label: "Analytic marginalization"
+        description: >-
+          Add a free constant magnitude offset and marginalize over it in
+          closed form (Gaussian marginalization of the SN chi-square).
+          Isolates Omega_Lambda; H0 becomes degenerate with the offset.
+
+  error_treatment:
+    label: "Error Model"
+    tags: [stats]
+    rationale: >-
+      Whether the fit uses only diagonal per-SN uncertainties or the full
+      Union2.1 covariance including systematics. Systematic correlations
+      typically widen the constraints and shift the best fit.
+    default: statistical_only
+    options:
+      statistical_only:
+        label: "Statistical only (diagonal)"
+        description: >-
+          Use only the per-SN distance-modulus uncertainties (diagonal
+          covariance) reported in the mu-vs-z table.
+      with_systematics:
+        label: "With systematics (full covariance)"
+        description: >-
+          Use the full Union2.1 covariance matrix including systematic
+          error correlations between supernovae.
+
+  redshift_cut:
+    label: "Redshift Selection"
+    tags: [data]
+    rationale: >-
+      The Union2.1 compilation spans 0.015 <= z <= 1.414. Low-redshift
+      supernovae carry peculiar-velocity and local-flow scatter not fully
+      captured by the redshift errors, which can bias the fit. Excluding
+      them trades sample size for a cleaner Hubble flow.
+    default: none
+    options:
+      none:
+        label: "Keep all supernovae"
+        description: "Fit every supernova in the compilation (z >= 0.015)."
+      low_z_cut:
+        label: "Exclude z < 0.023"
+        description: >-
+          Drop supernovae below z = 0.023, where peculiar velocities and
+          local flow contribute substantial non-cosmological scatter.

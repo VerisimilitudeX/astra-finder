@@ -1,8 +1,7 @@
-# Baseline Universe
-# Default configuration using standard practices
-
 id: baseline
-description: "Default configuration using standard practices"
-
+description: Default configuration using standard practices
 decisions:
-  example_method: option_a
+  inference_method: grid_scan
+  offset_treatment: fixed
+  error_treatment: statistical_only
+  redshift_cut: none
