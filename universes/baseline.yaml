@@ -1,0 +1,8 @@
+# Baseline Universe
+# Default configuration using standard practices
+
+id: baseline
+description: "Default configuration using standard practices"
+
+decisions:
+  example_method: option_a

@@ -1,0 +1,44 @@
+# ASTRA Analysis Specification
+
+version: "0.0.11"
+name: "new_experiment"
+container: Containerfile
+description: |
+  TODO: One-paragraph overview of the analysis — its question,
+  scope, and what the reader should take away. A richer write-up
+  (figures, citations, multi-page structure) is authored separately
+  as a report that references this analysis's elements; see the
+  ASTRA documentation.
+
+inputs:
+  - id: primary_data
+    type: data
+    description: "TODO: Describe your primary data source"
+
+outputs:
+  - id: main_result
+    type: metric
+    description: "TODO: Describe your primary output metric"
+    decisions: [example_method]
+    recipe:
+      command: python src/main.py --method {decisions.example_method} --out {output}
+
+  - id: conclusion
+    type: report
+    description: "Summary of analysis findings"
+    inputs: [main_result]
+    recipe:
+      command: python src/main.py --result {inputs.main_result} --out {output}
+
+decisions:
+  example_method:
+    label: "Example Method Choice"
+    rationale: "TODO: Explain why this decision matters"
+    default: option_a
+    options:
+      option_a:
+        label: "Option A"
+        description: "TODO: Describe option A"
+      option_b:
+        label: "Option B"
+        description: "TODO: Describe option B"
