@@ -1,9 +1,18 @@
-# Per-project environment for the lightcone-hub deployment: base on the
-# deployment's worker image (dask/dask-gateway/snakemake/lightcone-cli at
-# hub-matching versions) and add science deps on top. The Gateway worker
-# pod image IS the recipe environment, so recipes run unwrapped inside it;
-# the project itself is mounted into the worker (no COPY needed here).
-FROM europe-west1-docker.pkg.dev/lightconehub/lightcone/lightcone-worker-default:2026.07.12
+FROM python:3.12-slim
 
-COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+WORKDIR /app
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# This image runs as a Dask Gateway worker pod with the user's NFS home
+# mounted at /home/jovyan. A uid-1000 passwd entry keeps outputs owned
+# by the user and getpass.getuser() (called by snakemake) working.
+RUN useradd --create-home --uid 1000 jovyan
+USER jovyan
