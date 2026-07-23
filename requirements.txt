@@ -4,8 +4,8 @@ scipy
 matplotlib
 
 # Dask Gateway worker stack (pinned to this hub's versions)
-dask==2026.7.1
-distributed==2026.7.1
-dask-gateway==2026.3.0
-snakemake==9.23.1
+#dask==2026.7.1
+#distributed==2026.7.1
+#dask-gateway==2026.3.0
+#snakemake==9.23.1
 lightcone-cli @ git+https://github.com/LightconeResearch/lightcone-cli.git@jupyterhub-gateway-cloudbuild
