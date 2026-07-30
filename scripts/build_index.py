@@ -27,6 +27,7 @@ SEARCH_QUERIES = [
     "outputs filename:astra.yaml path:/",
 ]
 SEARCH_THROTTLE_S = 7  # code search: 10 req/min
+TOPIC_QUERIES = ["topic:astra", "topic:astra-analysis", "topic:lightcone-cli"]
 
 
 def session_with_token():
@@ -75,6 +76,21 @@ def search_repos(s):
     return repos
 
 
+def search_repos_by_topic(s):
+    """Second discovery channel: repos tagged with ASTRA-related topics.
+    Candidates still pass through the same root-astra.yaml validation."""
+    repos = {}
+    for query in TOPIC_QUERIES:
+        r = s.get(f"{API}/search/repositories", params={"q": query, "per_page": 100})
+        if r.status_code != 200:
+            print(f"  topic query {query!r} failed ({r.status_code})", file=sys.stderr)
+            continue
+        for item in r.json().get("items", []):
+            repos[item["full_name"]] = item
+        time.sleep(2)  # repo search: 30 req/min
+    return repos
+
+
 def is_astra_spec(text):
     """A root astra.yaml counts as ASTRA if it parses to a mapping with a
     name and at least one structural ASTRA key."""
@@ -117,6 +133,8 @@ def enrich(s, full_name):
         "description": description,
         "stars": repo.get("stargazers_count", 0),
         "pushed_at": repo.get("pushed_at"),
+        "topics": (repo.get("topics") or [])[:6],
+        "astra_tags": [str(t) for t in (doc.get("tags") or []) if isinstance(t, (str, int))][:6],
         "astra_name": str(doc.get("name", "")).strip() or None,
         "outputs": len(doc.get("outputs") or []),
         "decisions": len(doc.get("decisions") or []),
@@ -133,12 +151,22 @@ def main():
 
     print("searching for root astra.yaml files...", file=sys.stderr)
     repos = search_repos(s)
+    for full_name, repo in search_repos_by_topic(s).items():
+        repos.setdefault(full_name, repo)
     # Code search never indexes forks, so the repo hosting this index (a fork)
     # would be invisible to itself. Always include it as a candidate; it still
     # goes through the same astra.yaml validation as everything else.
     self_repo = os.environ.get("GITHUB_REPOSITORY")
     if self_repo:
         repos.setdefault(self_repo, {"full_name": self_repo})
+    # Manually seeded repos (search-index lag, forks, etc.).
+    seeds_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "seeds.txt")
+    if os.path.exists(seeds_path):
+        with open(seeds_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    repos.setdefault(line, {"full_name": line})
     print(f"found {len(repos)} candidate repos", file=sys.stderr)
 
     projects = []
