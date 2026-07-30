@@ -133,6 +133,12 @@ def main():
 
     print("searching for root astra.yaml files...", file=sys.stderr)
     repos = search_repos(s)
+    # Code search never indexes forks, so the repo hosting this index (a fork)
+    # would be invisible to itself. Always include it as a candidate; it still
+    # goes through the same astra.yaml validation as everything else.
+    self_repo = os.environ.get("GITHUB_REPOSITORY")
+    if self_repo:
+        repos.setdefault(self_repo, {"full_name": self_repo})
     print(f"found {len(repos)} candidate repos", file=sys.stderr)
 
     projects = []
