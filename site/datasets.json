@@ -1,0 +1,45 @@
+{
+  "generated_at": "2026-07-30T00:00:00Z",
+  "seed": true,
+  "count": 2,
+  "datasets": [
+    {
+      "hash": "b3d48e97141d2701ce5c7ede84bd6ed58126c180",
+      "names": [
+        "SCPUnion2.1_mu_vs_z.txt"
+      ],
+      "occurrences": [
+        {
+          "hash": "b3d48e97141d2701ce5c7ede84bd6ed58126c180",
+          "name": "SCPUnion2.1_mu_vs_z.txt",
+          "path": "data/SCPUnion2.1_mu_vs_z.txt",
+          "size": 33899,
+          "role": "input",
+          "ref_id": "union21_mu",
+          "repo": "VerisimilitudeX/astra-finder",
+          "branch": "master",
+          "analysis": "Union2.1 Flat LCDM Fit"
+        }
+      ]
+    },
+    {
+      "hash": "6053f4f91d42cf2569f44ce97d4f57265cf7a114",
+      "names": [
+        "SCPUnion2.1_covmat_sys.txt"
+      ],
+      "occurrences": [
+        {
+          "hash": "6053f4f91d42cf2569f44ce97d4f57265cf7a114",
+          "name": "SCPUnion2.1_covmat_sys.txt",
+          "path": "data/SCPUnion2.1_covmat_sys.txt",
+          "size": 6037238,
+          "role": "input",
+          "ref_id": "union21_covmat",
+          "repo": "VerisimilitudeX/astra-finder",
+          "branch": "master",
+          "analysis": "Union2.1 Flat LCDM Fit"
+        }
+      ]
+    }
+  ]
+}
