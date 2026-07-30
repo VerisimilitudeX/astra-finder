@@ -94,7 +94,7 @@ code { font-family: var(--mono); }
 
 /* ---------- hero ---------- */
 
-.hero { padding-bottom: 56px; }
+.hero { padding-bottom: 44px; }
 
 .ascii {
   margin: 0 0 10px;
@@ -110,76 +110,13 @@ code { font-family: var(--mono); }
 }
 
 .hero-tagline {
-  margin: 0 0 30px;
+  margin: 0;
   font-family: var(--mono);
   font-size: 14px;
   color: var(--faint);
   letter-spacing: 0.04em;
   animation: fade-up 0.5s ease 0.07s both;
 }
-
-.hero-description {
-  margin: 0 0 36px;
-  max-width: 640px;
-  font-size: 19px;
-  color: var(--muted);
-  animation: fade-up 0.5s ease 0.14s both;
-}
-
-.hero-description code {
-  color: var(--cyan);
-  font-size: 0.88em;
-}
-
-.hero-clone {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  animation: fade-up 0.5s ease 0.21s both;
-}
-
-.clone-label {
-  font-family: var(--mono);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--faint);
-}
-
-.cmd-box {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  width: fit-content;
-  min-width: 320px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--accent);
-  border-radius: 4px;
-  padding: 11px 14px;
-  font-family: var(--mono);
-  font-size: 14px;
-  color: var(--ink);
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.cmd-box:hover { background: var(--panel-2); }
-
-.cmd-prompt { color: var(--accent); }
-
-.cmd-arg { color: var(--faint); }
-
-.copy-hint {
-  font-size: 12px;
-  color: var(--faint);
-  transition: color 0.15s ease;
-}
-
-.cmd-box:hover .copy-hint { color: var(--accent); }
-
-.copy-hint.copied { color: var(--cyan); }
 
 /* ---------- board ---------- */
 
@@ -391,14 +328,12 @@ code { font-family: var(--mono); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ascii, .hero-tagline, .hero-description, .hero-clone { animation: none; }
+  .ascii, .hero-tagline { animation: none; }
 }
 
 /* ---------- responsive ---------- */
 
 @media (max-width: 640px) {
   .ascii { font-size: 8.5px; }
-  .hero-description { font-size: 16px; }
-  .cmd-box { min-width: 0; width: 100%; }
   .row { grid-template-columns: 30px 1fr auto; gap: 10px; }
 }

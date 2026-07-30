@@ -145,19 +145,6 @@
     });
   });
 
-  var cmdBox = document.getElementById("cmd-box");
-  var copyHint = document.getElementById("copy-hint");
-  cmdBox.addEventListener("click", function () {
-    navigator.clipboard.writeText("git clone https://github.com/<owner/repo>").then(function () {
-      copyHint.textContent = "copied";
-      copyHint.classList.add("copied");
-      setTimeout(function () {
-        copyHint.textContent = "copy";
-        copyHint.classList.remove("copied");
-      }, 1200);
-    });
-  });
-
   fetch("projects.json", { cache: "no-cache" })
     .then(function (r) { return r.json(); })
     .then(init)
