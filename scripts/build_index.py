@@ -125,8 +125,13 @@ def enrich(s, full_name):
         return None
     description = (doc.get("description") or repo.get("description") or "").strip()
     description = " ".join(description.split())
-    if len(description) > 200:
-        description = description[:197].rstrip() + "..."
+    if len(description) > 480:
+        description = description[:477].rstrip() + "..."
+    outputs_list = [
+        {"label": str(o.get("label") or o.get("id") or ""), "type": str(o.get("type") or "")}
+        for o in (doc.get("outputs") or [])
+        if isinstance(o, dict)
+    ][:16]
     return {
         "full_name": repo["full_name"],
         "html_url": repo["html_url"],
@@ -136,6 +141,7 @@ def enrich(s, full_name):
         "topics": (repo.get("topics") or [])[:6],
         "astra_tags": [str(t) for t in (doc.get("tags") or []) if isinstance(t, (str, int))][:6],
         "astra_name": str(doc.get("name", "")).strip() or None,
+        "outputs_list": outputs_list,
         "outputs": len(doc.get("outputs") or []),
         "decisions": len(doc.get("decisions") or []),
         "inputs": len(doc.get("inputs") or []),

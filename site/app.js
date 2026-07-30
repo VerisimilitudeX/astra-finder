@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var state = { projects: [], query: "", sort: "stars" };
+  var state = { projects: [], query: "", sort: "stars", open: null };
 
   var rowsEl = document.getElementById("rows");
   var emptyEl = document.getElementById("empty");
@@ -19,14 +19,24 @@
     if (!iso) return "";
     var days = Math.floor((Date.now() - new Date(iso).getTime()) / 864e5);
     if (days < 1) return "today";
-    if (days < 30) return days + "d ago";
-    if (days < 365) return Math.floor(days / 30) + "mo ago";
-    return Math.floor(days / 365) + "y ago";
+    if (days < 30) return days + " days ago";
+    if (days < 365) return Math.floor(days / 30) + " months ago";
+    return Math.floor(days / 365) + " years ago";
   }
 
   function escapeHtml(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function allTags(p) {
+    var seen = {};
+    return (p.topics || []).concat(p.astra_tags || []).filter(function (t) {
+      t = String(t);
+      if (seen[t.toLowerCase()]) return false;
+      seen[t.toLowerCase()] = true;
+      return true;
     });
   }
 
@@ -50,22 +60,35 @@
     return list;
   }
 
-  // GitHub topics + the astra.yaml's own tags, deduplicated.
-  function allTags(p) {
-    var seen = {};
-    return (p.topics || []).concat(p.astra_tags || []).filter(function (t) {
-      t = String(t);
-      if (seen[t.toLowerCase()]) return false;
-      seen[t.toLowerCase()] = true;
-      return true;
-    });
-  }
-
-  function specNote(p) {
-    var bits = [];
-    if (p.outputs) bits.push(p.outputs + " outputs");
-    if (p.decisions) bits.push(p.decisions + " decisions");
-    return bits.join(" · ");
+  function detailHtml(p) {
+    var outputs = (p.outputs_list || [])
+      .map(function (o) {
+        return (
+          "<li><span>" + escapeHtml(o.label) + "</span>" +
+          (o.type ? '<span class="output-type">' + escapeHtml(o.type) + "</span>" : "") +
+          "</li>"
+        );
+      })
+      .join("");
+    var tags = allTags(p)
+      .map(function (t) {
+        return '<button class="tag" data-topic="' + escapeHtml(t) + '">' + escapeHtml(t) + "</button>";
+      })
+      .join("");
+    return (
+      '<div class="detail">' +
+      (p.description ? '<p class="detail-desc">' + escapeHtml(p.description) + "</p>" : "") +
+      (outputs
+        ? '<div class="detail-section"><span class="detail-label">Outputs</span><ul class="outputs">' + outputs + "</ul></div>"
+        : "") +
+      (tags
+        ? '<div class="detail-section"><span class="detail-label">Tags</span><div class="tag-list">' + tags + "</div></div>"
+        : "") +
+      '<div class="detail-foot">' +
+      '<span class="detail-meta">Updated ' + escapeHtml(timeAgo(p.pushed_at)) + " · " + formatStars(p.stars || 0) + " stars</span>" +
+      '<a class="repo-link" href="' + escapeHtml(p.html_url) + '" target="_blank" rel="noopener">Open repository ↗</a>' +
+      "</div></div>"
+    );
   }
 
   function render() {
@@ -74,31 +97,21 @@
     rowsEl.innerHTML = list
       .map(function (p, i) {
         var name = p.astra_name || (p.full_name || "").split("/")[1] || p.full_name;
+        var isOpen = state.open === p.full_name;
         var stat =
-          state.sort === "updated"
-            ? escapeHtml(timeAgo(p.pushed_at))
-            : formatStars(p.stars || 0) + '<span class="unit">✦</span>';
-        var chips = allTags(p)
-          .map(function (t) {
-            return '<button class="chip" data-topic="' + escapeHtml(t) + '">' + escapeHtml(t) + "</button>";
-          })
-          .join("");
-        var note = specNote(p);
-        var meta =
-          chips || note
-            ? '<span class="row-meta">' + chips + (note ? '<span class="spec-note">' + escapeHtml(note) + "</span>" : "") + "</span>"
-            : "";
+          state.sort === "updated" ? timeAgo(p.pushed_at) : formatStars(p.stars || 0) + " ★";
         return (
-          "<li>" +
-          '<a class="row" href="' + escapeHtml(p.html_url) + '" target="_blank" rel="noopener">' +
-          '<span class="row-rank">' + String(i + 1).padStart(2, "0") + "</span>" +
+          '<li class="entry' + (isOpen ? " open" : "") + '">' +
+          '<button class="row" data-repo="' + escapeHtml(p.full_name) + '" aria-expanded="' + isOpen + '">' +
+          '<span class="row-rank">' + (i + 1) + "</span>" +
           '<span class="row-main">' +
-          '<span class="row-title"><h3 class="row-name">' + escapeHtml(name) + '</h3><span class="row-repo">' + escapeHtml(p.full_name) + "</span></span>" +
+          '<span class="row-title"><h2 class="row-name">' + escapeHtml(name) + '</h2><span class="row-repo">' + escapeHtml(p.full_name) + "</span></span>" +
           (p.description ? '<p class="row-desc">' + escapeHtml(p.description) + "</p>" : "") +
-          meta +
           "</span>" +
-          '<span class="row-stat">' + stat + "</span>" +
-          "</a></li>"
+          '<span class="row-stat">' + escapeHtml(stat) + "</span>" +
+          "</button>" +
+          (isOpen ? detailHtml(p) : "") +
+          "</li>"
         );
       })
       .join("");
@@ -121,40 +134,31 @@
     render();
   });
 
-  // Topic chips filter on click instead of following the row link.
   rowsEl.addEventListener("click", function (e) {
-    var chip = e.target.closest(".chip");
-    if (!chip) return;
-    e.preventDefault();
-    e.stopPropagation();
-    searchEl.value = chip.dataset.topic;
-    state.query = chip.dataset.topic;
-    render();
-  });
-
-  Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (tab) {
-    tab.addEventListener("click", function () {
-      document.querySelectorAll(".tab").forEach(function (t) {
-        t.classList.remove("active");
-        t.setAttribute("aria-selected", "false");
-      });
-      tab.classList.add("active");
-      tab.setAttribute("aria-selected", "true");
-      state.sort = tab.dataset.sort;
+    var tag = e.target.closest(".tag");
+    if (tag) {
+      searchEl.value = tag.dataset.topic;
+      state.query = tag.dataset.topic;
       render();
-    });
+      return;
+    }
+    var row = e.target.closest(".row");
+    if (row) {
+      state.open = state.open === row.dataset.repo ? null : row.dataset.repo;
+      render();
+    }
   });
 
-  var cmdBox = document.getElementById("cmd-box");
-  var copyHint = document.getElementById("copy-hint");
-  cmdBox.addEventListener("click", function () {
-    navigator.clipboard.writeText("git clone https://github.com/<owner/repo>").then(function () {
-      copyHint.textContent = "copied";
-      copyHint.classList.add("copied");
-      setTimeout(function () {
-        copyHint.textContent = "copy";
-        copyHint.classList.remove("copied");
-      }, 1200);
+  Array.prototype.forEach.call(document.querySelectorAll(".sort"), function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".sort").forEach(function (b) {
+        b.classList.remove("active");
+        b.setAttribute("aria-selected", "false");
+      });
+      btn.classList.add("active");
+      btn.setAttribute("aria-selected", "true");
+      state.sort = btn.dataset.sort;
+      render();
     });
   });
 
