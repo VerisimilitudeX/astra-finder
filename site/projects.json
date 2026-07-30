@@ -6,7 +6,7 @@
     {
       "full_name": "VerisimilitudeX/astra-finder",
       "html_url": "https://github.com/VerisimilitudeX/astra-finder",
-      "description": "Union2.1 flat LCDM Hubble-diagram fit \u2014 reference ASTRA analysis",
+      "description": "Fits the Supernova Cosmology Project Union2.1 Hubble diagram (distance modulus mu vs redshift z for 580 SNe Ia) with a flat Lambda-CDM model, constraining the two free parameters H0 and Omega_Lambda (with Omega_m = 1 - Omega_Lambda). A single fit produces the chi-square surface / posterior over (Omega_Lambda, H0), from which the analysis reports best-fit H0 and Omega_Lambda with uncertainties, the Hubble diagram with the best-fit model overlaid, and the 68%/95% confidence...",
       "stars": 0,
       "pushed_at": "2026-07-30T13:52:54Z",
       "topics": [
@@ -40,6 +40,17 @@
         }
       ],
       "outputs": 5,
+      "inputs_list": [
+        {
+          "label": "Union2.1 mu(z) table",
+          "dataset": "SCPUnion2.1_mu_vs_z.txt"
+        },
+        {
+          "label": "Union2.1 systematic covariance",
+          "dataset": "SCPUnion2.1_covmat_sys.txt"
+        }
+      ],
+      "findings_list": [],
       "inputs": 2
     }
   ]
