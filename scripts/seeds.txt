@@ -1,0 +1,4 @@
+# Known ASTRA repos merged into every index run, one owner/repo per line.
+# Escape hatch for repos GitHub code search misses (new repos not yet
+# indexed, forks, etc.). Entries still pass astra.yaml validation.
+anthonyozerov/astra-multiverse-example

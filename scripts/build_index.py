@@ -134,6 +134,7 @@ def enrich(s, full_name):
         "stars": repo.get("stargazers_count", 0),
         "pushed_at": repo.get("pushed_at"),
         "topics": (repo.get("topics") or [])[:6],
+        "astra_tags": [str(t) for t in (doc.get("tags") or []) if isinstance(t, (str, int))][:6],
         "astra_name": str(doc.get("name", "")).strip() or None,
         "outputs": len(doc.get("outputs") or []),
         "decisions": len(doc.get("decisions") or []),
@@ -158,6 +159,14 @@ def main():
     self_repo = os.environ.get("GITHUB_REPOSITORY")
     if self_repo:
         repos.setdefault(self_repo, {"full_name": self_repo})
+    # Manually seeded repos (search-index lag, forks, etc.).
+    seeds_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "seeds.txt")
+    if os.path.exists(seeds_path):
+        with open(seeds_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    repos.setdefault(line, {"full_name": line})
     print(f"found {len(repos)} candidate repos", file=sys.stderr)
 
     projects = []

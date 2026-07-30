@@ -38,7 +38,7 @@
         (p.full_name || "").toLowerCase().indexOf(q) !== -1 ||
         (p.astra_name || "").toLowerCase().indexOf(q) !== -1 ||
         (p.description || "").toLowerCase().indexOf(q) !== -1 ||
-        (p.topics || []).some(function (t) { return t.toLowerCase().indexOf(q) !== -1; })
+        allTags(p).some(function (t) { return t.toLowerCase().indexOf(q) !== -1; })
       );
     });
     list.sort(function (a, b) {
@@ -48,6 +48,17 @@
       return (b.stars || 0) - (a.stars || 0) || (a.full_name || "").localeCompare(b.full_name || "");
     });
     return list;
+  }
+
+  // GitHub topics + the astra.yaml's own tags, deduplicated.
+  function allTags(p) {
+    var seen = {};
+    return (p.topics || []).concat(p.astra_tags || []).filter(function (t) {
+      t = String(t);
+      if (seen[t.toLowerCase()]) return false;
+      seen[t.toLowerCase()] = true;
+      return true;
+    });
   }
 
   function specNote(p) {
@@ -67,7 +78,7 @@
           state.sort === "updated"
             ? escapeHtml(timeAgo(p.pushed_at))
             : formatStars(p.stars || 0) + '<span class="unit">✦</span>';
-        var chips = (p.topics || [])
+        var chips = allTags(p)
           .map(function (t) {
             return '<button class="chip" data-topic="' + escapeHtml(t) + '">' + escapeHtml(t) + "</button>";
           })
