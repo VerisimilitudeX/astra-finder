@@ -37,7 +37,8 @@
       return (
         (p.full_name || "").toLowerCase().indexOf(q) !== -1 ||
         (p.astra_name || "").toLowerCase().indexOf(q) !== -1 ||
-        (p.description || "").toLowerCase().indexOf(q) !== -1
+        (p.description || "").toLowerCase().indexOf(q) !== -1 ||
+        (p.topics || []).some(function (t) { return t.toLowerCase().indexOf(q) !== -1; })
       );
     });
     list.sort(function (a, b) {
@@ -49,6 +50,13 @@
     return list;
   }
 
+  function specNote(p) {
+    var bits = [];
+    if (p.outputs) bits.push(p.outputs + " outputs");
+    if (p.decisions) bits.push(p.decisions + " decisions");
+    return bits.join(" · ");
+  }
+
   function render() {
     var list = visibleProjects();
     emptyEl.hidden = list.length > 0;
@@ -57,17 +65,28 @@
         var name = p.astra_name || (p.full_name || "").split("/")[1] || p.full_name;
         var stat =
           state.sort === "updated"
-            ? '<span class="row-stat">' + escapeHtml(timeAgo(p.pushed_at)) + "</span>"
-            : '<span class="row-stat">' + formatStars(p.stars || 0) + '<span class="unit">★</span></span>';
+            ? escapeHtml(timeAgo(p.pushed_at))
+            : formatStars(p.stars || 0) + '<span class="unit">✦</span>';
+        var chips = (p.topics || [])
+          .map(function (t) {
+            return '<button class="chip" data-topic="' + escapeHtml(t) + '">' + escapeHtml(t) + "</button>";
+          })
+          .join("");
+        var note = specNote(p);
+        var meta =
+          chips || note
+            ? '<span class="row-meta">' + chips + (note ? '<span class="spec-note">' + escapeHtml(note) + "</span>" : "") + "</span>"
+            : "";
         return (
-          '<li><a class="row" href="' + escapeHtml(p.html_url) + '" target="_blank" rel="noopener">' +
-          '<span class="row-rank">' + (i + 1) + "</span>" +
+          "<li>" +
+          '<a class="row" href="' + escapeHtml(p.html_url) + '" target="_blank" rel="noopener">' +
+          '<span class="row-rank">' + String(i + 1).padStart(2, "0") + "</span>" +
           '<span class="row-main">' +
-          '<h3 class="row-name">' + escapeHtml(name) + "</h3>" +
-          '<p class="row-repo">' + escapeHtml(p.full_name) + "</p>" +
-          "</span>" +
-          stat +
+          '<span class="row-title"><h3 class="row-name">' + escapeHtml(name) + '</h3><span class="row-repo">' + escapeHtml(p.full_name) + "</span></span>" +
           (p.description ? '<p class="row-desc">' + escapeHtml(p.description) + "</p>" : "") +
+          meta +
+          "</span>" +
+          '<span class="row-stat">' + stat + "</span>" +
           "</a></li>"
         );
       })
@@ -76,7 +95,7 @@
 
   function init(data) {
     state.projects = (data && data.projects) || [];
-    countEl.textContent = "(" + state.projects.length + ")";
+    countEl.textContent = state.projects.length;
     if (data && data.generated_at && refreshedEl) {
       refreshedEl.textContent = new Date(data.generated_at).toLocaleString(undefined, {
         dateStyle: "medium",
@@ -88,6 +107,17 @@
 
   searchEl.addEventListener("input", function () {
     state.query = searchEl.value;
+    render();
+  });
+
+  // Topic chips filter on click instead of following the row link.
+  rowsEl.addEventListener("click", function (e) {
+    var chip = e.target.closest(".chip");
+    if (!chip) return;
+    e.preventDefault();
+    e.stopPropagation();
+    searchEl.value = chip.dataset.topic;
+    state.query = chip.dataset.topic;
     render();
   });
 
@@ -105,11 +135,15 @@
   });
 
   var cmdBox = document.getElementById("cmd-box");
-  var copyBtn = document.getElementById("copy-btn");
+  var copyHint = document.getElementById("copy-hint");
   cmdBox.addEventListener("click", function () {
     navigator.clipboard.writeText("git clone https://github.com/<owner/repo>").then(function () {
-      copyBtn.classList.add("copied");
-      setTimeout(function () { copyBtn.classList.remove("copied"); }, 1200);
+      copyHint.textContent = "copied";
+      copyHint.classList.add("copied");
+      setTimeout(function () {
+        copyHint.textContent = "copy";
+        copyHint.classList.remove("copied");
+      }, 1200);
     });
   });
 

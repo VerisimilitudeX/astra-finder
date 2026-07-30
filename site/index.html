@@ -1,98 +1,76 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ASTRA Finder — The Open ASTRA Analysis Index</title>
-  <meta name="description" content="Discover every public GitHub repository with an astra.yaml — reproducible, decision-tracked scientific analyses.">
+  <title>ASTRA Finder — every ASTRA analysis on GitHub</title>
+  <meta name="description" content="A sweep of GitHub for every public repository carrying an astra.yaml at its root — reproducible, decision-tracked scientific analyses.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Fira+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>✦</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>✴</text></svg>">
 </head>
 <body>
   <header class="site-header">
     <div class="header-inner">
-      <div class="header-left">
-        <span class="header-mark" aria-hidden="true">✦</span>
-        <span class="header-slash" aria-hidden="true">
-          <svg height="16" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.01526 15.3939L4.3107 14.7046L10.3107 0.704556L10.6061 0.0151978L11.9849 0.606077L11.6894 1.29544L5.68942 15.2954L5.39398 15.9848L4.01526 15.3939Z" fill="currentColor"></path></svg>
-        </span>
-        <a class="header-title" href="./">Astra Finder</a>
-      </div>
+      <a class="wordmark" href="./"><span class="wordmark-glyph">✴</span> astra-finder</a>
       <nav class="header-nav">
-        <a href="#projects">Projects</a>
-        <a href="https://github.com/VerisimilitudeX/astra-finder" target="_blank" rel="noopener">GitHub</a>
+        <a href="#observations">Index</a>
+        <a href="https://github.com/VerisimilitudeX/astra-finder" target="_blank" rel="noopener">Source</a>
       </nav>
     </div>
   </header>
 
   <main class="page">
     <section class="hero">
-      <div class="hero-brand">
-        <pre class="ascii" aria-label="ASTRA">
+      <pre class="ascii" aria-label="ASTRA">
  █████╗ ███████╗████████╗██████╗  █████╗
 ██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔══██╗
 ███████║███████╗   ██║   ██████╔╝███████║
 ██╔══██║╚════██║   ██║   ██╔══██╗██╔══██║
 ██║  ██║███████║   ██║   ██║  ██║██║  ██║
 ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝</pre>
-        <p class="hero-tagline">The Open ASTRA Analysis Index</p>
-      </div>
+      <p class="hero-tagline">// every astra analysis on github</p>
 
-      <p class="hero-description">ASTRA analyses are reproducible scientific pipelines. Every public repository with an <code>astra.yaml</code> at its root, discovered automatically through the GitHub&nbsp;API.</p>
+      <p class="hero-description">ASTRA analyses declare their inputs, outputs, and tracked decisions in a single <code>astra.yaml</code>. This instrument sweeps GitHub for every public repository carrying one at its root — by file search and by topic — and verifies each spec before listing it.</p>
 
-      <div class="hero-try">
-        <h2 class="section-label">Try one now</h2>
-        <div class="cmd-box" id="cmd-box" title="Copy to clipboard">
-          <code><span class="cmd-dollar">$</span><span class="cmd-text">git clone</span><span class="cmd-arg">&lt;owner/repo&gt;</span></code>
-          <button class="copy-btn" id="copy-btn" aria-label="Copy to clipboard">
-            <svg viewBox="0 0 16 16" height="16" width="16"><path fill="currentColor" fill-rule="evenodd" d="M2.75.5C1.78.5 1 1.28 1 2.25v7.5c0 .97.78 1.75 1.75 1.75H4.5V10H2.75a.25.25 0 0 1-.25-.25v-7.5c0-.14.11-.25.25-.25h5.5c.14 0 .25.11.25.25V3H10v-.75C10 1.28 9.22.5 8.25.5zm5 4C6.78 4.5 6 5.28 6 6.25v7.5c0 .97.78 1.75 1.75 1.75h5.5c.97 0 1.75-.78 1.75-1.75v-7.5c0-.97-.78-1.75-1.75-1.75zM7.5 6.25c0-.14.11-.25.25-.25h5.5c.14 0 .25.11.25.25v7.5q-.02.23-.25.25h-5.5a.25.25 0 0 1-.25-.25z" clip-rule="evenodd"/></svg>
-          </button>
-        </div>
+      <div class="hero-clone">
+        <span class="clone-label">clone an analysis</span>
+        <button class="cmd-box" id="cmd-box" title="Copy to clipboard">
+          <code><span class="cmd-prompt">❯</span> git clone <span class="cmd-arg">&lt;owner/repo&gt;</span></code>
+          <span class="copy-hint" id="copy-hint">copy</span>
+        </button>
       </div>
     </section>
 
-    <section class="board" id="projects">
-      <div class="search-wrap">
-        <svg class="search-icon" viewBox="0 0 16 16" height="16" width="16"><path fill="currentColor" fill-rule="evenodd" d="M6.5 1a5.5 5.5 0 1 0 3.454 9.779l3.634 3.633 1.06-1.06-3.633-3.634A5.5 5.5 0 0 0 6.5 1M2.5 6.5a4 4 0 1 1 8 0 4 4 0 0 1-8 0" clip-rule="evenodd"/></svg>
-        <input type="search" id="search" placeholder="Search projects..." autocomplete="off" spellcheck="false">
-      </div>
-
-      <div class="tabs" role="tablist">
-        <button class="tab active" data-sort="stars" role="tab" aria-selected="true">Most Starred <span id="count-all"></span></button>
-        <button class="tab" data-sort="updated" role="tab" aria-selected="false">Recently Active</button>
-      </div>
-
-      <div class="board-body">
-        <div class="board-head">
-          <span class="col-rank">#</span>
-          <span class="col-name">Project</span>
-          <span class="col-stat">Stars</span>
+    <section class="board" id="observations">
+      <div class="board-bar">
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-sort="stars" role="tab" aria-selected="true">most starred</button>
+          <button class="tab" data-sort="updated" role="tab" aria-selected="false">recently active</button>
         </div>
-        <ol class="rows" id="rows"></ol>
-        <p class="empty" id="empty" hidden>No projects match your search.</p>
+        <span class="board-count"><span id="count-all">0</span> analyses indexed</span>
       </div>
+
+      <div class="search-wrap">
+        <span class="search-prompt" aria-hidden="true">❯</span>
+        <input type="search" id="search" placeholder="filter by name, owner, or topic…" autocomplete="off" spellcheck="false">
+      </div>
+
+      <ol class="rows" id="rows"></ol>
+      <p class="empty" id="empty" hidden>no analyses match — clear the filter to see the full index.</p>
     </section>
   </main>
 
   <footer class="site-footer">
     <div class="footer-inner">
-      <div class="footer-col">
-        <h3>Browse</h3>
-        <a href="#projects">All projects</a>
-        <a href="https://github.com/search?q=filename%3Aastra.yaml+path%3A%2F&type=code" target="_blank" rel="noopener">Search on GitHub</a>
-      </div>
-      <div class="footer-col">
-        <h3>ASTRA</h3>
-        <a href="https://github.com/VerisimilitudeX/astra-finder" target="_blank" rel="noopener">This index</a>
-        <a href="https://github.com/VerisimilitudeX/astra-finder/blob/master/astra.yaml" target="_blank" rel="noopener">Example astra.yaml</a>
-      </div>
-      <div class="footer-col footer-meta">
-        <p>Index refreshed <span id="refreshed">—</span>.</p>
-        <p>Powered by the GitHub API.</p>
-      </div>
+      <span>index refreshed <span id="refreshed">—</span> · resweeps every 6h via the GitHub API</span>
+      <span class="footer-links">
+        <a href="https://github.com/VerisimilitudeX/astra-finder/blob/master/astra.yaml" target="_blank" rel="noopener">example astra.yaml</a>
+        <a href="https://github.com/search?q=filename%3Aastra.yaml+path%3A%2F&type=code" target="_blank" rel="noopener">raw search</a>
+        <a href="https://github.com/VerisimilitudeX/astra-finder" target="_blank" rel="noopener">github</a>
+      </span>
     </div>
   </footer>
 
