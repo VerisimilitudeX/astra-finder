@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var state = { projects: [], query: "", sort: "stars", open: null, dataset: null };
+  var state = { projects: [], datasets: [], repoData: {}, query: "", sort: "stars", open: null };
 
   var rowsEl = document.getElementById("rows");
   var emptyEl = document.getElementById("empty");
@@ -9,7 +9,6 @@
   var countEl = document.getElementById("count-all");
   var refreshedEl = document.getElementById("refreshed");
   var lineageEl = document.getElementById("lineage");
-  var filterNoteEl = document.getElementById("filter-note");
 
   function formatStars(n) {
     if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
@@ -42,24 +41,31 @@
     });
   }
 
-  function datasetsOf(p) {
-    return (p.inputs_list || [])
-      .map(function (i) { return i.dataset; })
-      .filter(Boolean);
-  }
-
   function displayName(p) {
     return p.astra_name || (p.full_name || "").split("/")[1] || p.full_name;
+  }
+
+  // repo -> {hashes: Set-like object, names: []} derived from datasets.json
+  function buildRepoData() {
+    var map = {};
+    state.datasets.forEach(function (d) {
+      (d.occurrences || []).forEach(function (o) {
+        var entry = (map[o.repo] = map[o.repo] || { hashes: {}, names: [] });
+        entry.hashes[d.hash] = true;
+        if (entry.names.indexOf(o.name) === -1) entry.names.push(o.name);
+      });
+    });
+    state.repoData = map;
   }
 
   function visibleProjects() {
     var q = state.query.trim().toLowerCase();
     var list = state.projects.filter(function (p) {
-      if (state.dataset && datasetsOf(p).indexOf(state.dataset) === -1) return false;
       if (!q) return true;
+      var extra = state.repoData[p.full_name] ? state.repoData[p.full_name].names : [];
       var hay = [p.full_name, p.astra_name, p.description]
         .concat(allTags(p))
-        .concat(datasetsOf(p))
+        .concat(extra)
         .concat((p.findings_list || []).map(function (f) { return f.label; }));
       return hay.some(function (h) {
         return h && String(h).toLowerCase().indexOf(q) !== -1;
@@ -81,11 +87,13 @@
   }
 
   function sameDataAnalyses(p) {
-    var mine = datasetsOf(p);
-    if (!mine.length) return [];
+    var mine = state.repoData[p.full_name];
+    if (!mine) return [];
     return state.projects.filter(function (o) {
       if (o.full_name === p.full_name) return false;
-      return datasetsOf(o).some(function (d) { return mine.indexOf(d) !== -1; });
+      var theirs = state.repoData[o.full_name];
+      if (!theirs) return false;
+      return Object.keys(mine.hashes).some(function (h) { return theirs.hashes[h]; });
     });
   }
 
@@ -120,16 +128,6 @@
       html += '<div class="detail-section"><span class="detail-label">Outputs</span><ul class="outputs">' + outputs + "</ul></div>";
     }
 
-    var datasets = (p.inputs_list || [])
-      .filter(function (i) { return i.dataset; })
-      .map(function (i) {
-        return '<button class="tag dataset-tag" data-dataset="' + escapeHtml(i.dataset) + '" title="' + escapeHtml(i.label) + '">' + escapeHtml(i.dataset) + "</button>";
-      })
-      .join("");
-    if (datasets) {
-      html += '<div class="detail-section"><span class="detail-label">Input data</span><div class="tag-list">' + datasets + "</div></div>";
-    }
-
     var siblings = sameDataAnalyses(p)
       .map(function (o) {
         return '<button class="link-btn" data-open="' + escapeHtml(o.full_name) + '">' + escapeHtml(displayName(o)) + "</button>";
@@ -148,11 +146,23 @@
       html += '<div class="detail-section"><span class="detail-label">Tags</span><div class="tag-list">' + tags + "</div></div>";
     }
 
-    html +=
-      '<div class="detail-section"><span class="detail-label">Verification badge</span>' +
-      '<div class="badge-embed"><img src="badges/' + escapeHtml(p.full_name.replace("/", "--")) + '.svg" alt="ASTRA verified" onerror="this.closest(\'.detail-section\').style.display=\'none\'">' +
-      '<code>' + escapeHtml(badgeMarkdown(p)) + "</code>" +
-      '<button class="copy-badge" data-md="' + escapeHtml(badgeMarkdown(p)) + '">copy</button></div></div>';
+    if (p.verified) {
+      html +=
+        '<div class="detail-section"><span class="detail-label">Verification badge</span>' +
+        '<div class="badge-embed"><img src="badges/' + escapeHtml(p.full_name.replace("/", "--")) + '.svg" alt="ASTRA verified">' +
+        "<code>" + escapeHtml(badgeMarkdown(p)) + "</code>" +
+        '<button class="copy-badge" data-md="' + escapeHtml(badgeMarkdown(p)) + '">copy</button></div></div>';
+    } else {
+      var reasons = (p.verification_errors || [])
+        .slice(0, 4)
+        .map(function (e) { return "<li>" + escapeHtml(e) + "</li>"; })
+        .join("");
+      html +=
+        '<div class="detail-section"><span class="detail-label">Verification</span>' +
+        '<p class="verify-note">Indexed, but the spec does not pass ASTRA validation:</p>' +
+        (reasons ? '<ul class="verify-errors">' + reasons + "</ul>" : "") +
+        "</div>";
+    }
 
     html +=
       '<div class="detail-foot">' +
@@ -165,11 +175,6 @@
   function render() {
     var list = visibleProjects();
     emptyEl.hidden = list.length > 0;
-    if (filterNoteEl) {
-      filterNoteEl.innerHTML = state.dataset
-        ? 'Showing analyses of <strong>' + escapeHtml(state.dataset) + '</strong> <button class="clear-filter" id="clear-filter">clear</button>'
-        : "";
-    }
     rowsEl.innerHTML = list
       .map(function (p, i) {
         var isOpen = state.open === p.full_name;
@@ -181,7 +186,10 @@
           '<button class="row" data-repo="' + escapeHtml(p.full_name) + '" aria-expanded="' + isOpen + '">' +
           '<span class="row-rank">' + (i + 1) + "</span>" +
           '<span class="row-main">' +
-          '<span class="row-title"><h2 class="row-name">' + escapeHtml(displayName(p)) + '</h2><span class="row-repo">' + escapeHtml(p.full_name) + "</span></span>" +
+          '<span class="row-title"><h2 class="row-name">' + escapeHtml(displayName(p)) + "</h2>" +
+          '<span class="row-repo">' + escapeHtml(p.full_name) + "</span>" +
+          (p.verified ? '<span class="verified-mark" title="Passes ASTRA validation">✓ verified</span>' : "") +
+          "</span>" +
           (p.description ? '<p class="row-desc">' + escapeHtml(p.description) + "</p>" : "") +
           (headline && headline.label && !isOpen
             ? '<p class="row-finding">Finding: ' + escapeHtml(headline.label) + "</p>"
@@ -199,30 +207,30 @@
 
   function renderLineage() {
     if (!lineageEl) return;
-    var map = {};
-    state.projects.forEach(function (p) {
-      datasetsOf(p).forEach(function (d) {
-        (map[d] = map[d] || []).push(p);
-      });
-    });
-    var keys = Object.keys(map).sort(function (a, b) {
-      return map[b].length - map[a].length || a.localeCompare(b);
-    });
-    if (!keys.length) {
-      lineageEl.innerHTML = '<p class="lineage-empty">No declared input datasets yet.</p>';
+    if (!state.datasets.length) {
+      lineageEl.innerHTML = '<p class="lineage-empty">No data files hashed yet.</p>';
       return;
     }
-    lineageEl.innerHTML = keys
+    lineageEl.innerHTML = state.datasets
       .map(function (d) {
-        var uses = map[d]
-          .map(function (p) {
-            return '<button class="link-btn" data-open="' + escapeHtml(p.full_name) + '">' + escapeHtml(displayName(p)) + "</button>";
+        var repos = [];
+        (d.occurrences || []).forEach(function (o) {
+          if (repos.indexOf(o.repo) === -1) repos.push(o.repo);
+        });
+        var uses = repos
+          .map(function (r) {
+            var p = state.projects.find(function (x) { return x.full_name === r; });
+            var name = p ? displayName(p) : r;
+            return '<button class="link-btn" data-open="' + escapeHtml(r) + '">' + escapeHtml(name) + "</button>";
           })
           .join('<span class="sep">·</span>');
         return (
           '<div class="dataset-row">' +
-          '<div class="dataset-head"><button class="dataset-name" data-dataset="' + escapeHtml(d) + '">' + escapeHtml(d) + "</button>" +
-          '<span class="dataset-count">' + map[d].length + (map[d].length === 1 ? " analysis" : " analyses") + "</span></div>" +
+          '<div class="dataset-head">' +
+          '<a class="dataset-name" href="dataset.html?h=' + escapeHtml(d.hash) + '">' + escapeHtml(d.names[0]) + "</a>" +
+          '<code class="dataset-hash">' + escapeHtml(d.hash.slice(0, 12)) + "</code>" +
+          '<span class="dataset-count">' + repos.length + (repos.length === 1 ? " analysis" : " analyses") + "</span>" +
+          "</div>" +
           '<div class="dataset-uses">' + uses + "</div>" +
           "</div>"
         );
@@ -232,24 +240,9 @@
 
   function openAnalysis(fullName) {
     state.open = fullName;
-    state.dataset = null;
-    state.query = "";
-    searchEl.value = "";
     render();
     var el = document.querySelector('[data-entry="' + CSS.escape(fullName) + '"]');
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
-
-  function init(data) {
-    state.projects = (data && data.projects) || [];
-    countEl.textContent = state.projects.length;
-    if (data && data.generated_at && refreshedEl) {
-      refreshedEl.textContent = new Date(data.generated_at).toLocaleString(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      });
-    }
-    render();
   }
 
   searchEl.addEventListener("input", function () {
@@ -258,25 +251,9 @@
   });
 
   document.addEventListener("click", function (e) {
-    var clear = e.target.closest("#clear-filter");
-    if (clear) {
-      state.dataset = null;
-      render();
-      return;
-    }
-    var openBtn = e.target.closest(".link-btn");
+    var openBtn = e.target.closest(".link-btn[data-open]");
     if (openBtn) {
       openAnalysis(openBtn.dataset.open);
-      return;
-    }
-    var ds = e.target.closest("[data-dataset]");
-    if (ds) {
-      e.preventDefault();
-      e.stopPropagation();
-      state.dataset = ds.dataset.dataset;
-      state.open = null;
-      render();
-      document.getElementById("index").scrollIntoView({ behavior: "smooth" });
       return;
     }
     var copyBadge = e.target.closest(".copy-badge");
@@ -289,8 +266,8 @@
       });
       return;
     }
-    var tag = e.target.closest(".tag");
-    if (tag && tag.dataset.topic) {
+    var tag = e.target.closest(".tag[data-topic]");
+    if (tag) {
       e.preventDefault();
       e.stopPropagation();
       searchEl.value = tag.dataset.topic;
@@ -318,8 +295,26 @@
     });
   });
 
-  fetch("projects.json", { cache: "no-cache" })
-    .then(function (r) { return r.json(); })
-    .then(init)
-    .catch(function () { init({ projects: [] }); });
+  Promise.all([
+    fetch("projects.json", { cache: "no-cache" }).then(function (r) { return r.json(); }),
+    fetch("datasets.json", { cache: "no-cache" }).then(function (r) { return r.json(); }).catch(function () { return { datasets: [] }; }),
+  ])
+    .then(function (results) {
+      var data = results[0];
+      state.projects = (data && data.projects) || [];
+      state.datasets = (results[1] && results[1].datasets) || [];
+      buildRepoData();
+      countEl.textContent = state.projects.length;
+      if (data && data.generated_at && refreshedEl) {
+        refreshedEl.textContent = new Date(data.generated_at).toLocaleString(undefined, {
+          dateStyle: "medium",
+          timeStyle: "short",
+        });
+      }
+      render();
+    })
+    .catch(function () {
+      state.projects = [];
+      render();
+    });
 })();

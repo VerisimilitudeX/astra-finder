@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""Build site/projects.json: every public GitHub repo with an astra.yaml at root.
+"""Build the ASTRA Discoverability index.
 
-Discovery channels (each independently fault-tolerant — one failing channel
-never sinks the run):
-  1. Code search:   filename:astra.yaml path:/          (10 req/min, throttled)
-  2. Topic search:  topic:astra, topic:astra-analysis, topic:lightcone-cli
-  3. Self repo:     $GITHUB_REPOSITORY (forks are invisible to code search)
-  4. Seed list:     scripts/seeds.txt  (search-index lag escape hatch)
+Outputs:
+  site/projects.json   one entry per repo with a root astra.yaml
+  site/datasets.json   content-addressed data files (git blob SHA) with every
+                       repo that carries them as an input or committed output
+  site/badges/*.svg    verification badge, written ONLY for verified repos
 
-Every candidate's astra.yaml is fetched and validated before listing. The
-index records outputs, findings (label + claim), and input datasets (for the
-lineage view), and writes one verification badge SVG per listed repo under
-site/badges/.
+Discovery channels (each independently fault-tolerant): code search, topic
+search, the host repo itself, and scripts/seeds.txt.
+
+Two tiers:
+  indexed   the file parses as YAML and looks ASTRA-shaped (listed)
+  verified  the spec passes schema validation against the ASTRA reference
+            (known top-level fields, options as labelled mappings, valid
+            defaults, recipe commands present, placeholder references declared)
+            AND every declared local input file and recipe script actually
+            exists in the repo tree.
 
 Usage:
     GITHUB_TOKEN=... python3 scripts/build_index.py [--out site/projects.json]
@@ -21,6 +26,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import sys
 import time
 import traceback
@@ -31,11 +37,18 @@ import yaml
 API = "https://api.github.com"
 SEARCH_QUERIES = [
     "filename:astra.yaml path:/",
-    # Fallback with a search term in case GitHub rejects qualifier-only queries.
-    "outputs filename:astra.yaml path:/",
+    "outputs filename:astra.yaml path:/",  # fallback if qualifier-only is rejected
 ]
 TOPIC_QUERIES = ["topic:astra", "topic:astra-analysis", "topic:lightcone-cli"]
 SEARCH_THROTTLE_S = 7  # code search: 10 req/min
+
+ALLOWED_TOP_LEVEL = {
+    "id", "version", "name", "description", "tags", "inputs", "outputs",
+    "decisions", "prior_insights", "findings", "analyses", "container",
+}
+MAX_OUTPUT_FILES_PER_REPO = 24
+SCRIPT_EXT_RE = re.compile(r"^[\w./-]+\.(py|r|R|sh|jl|ipynb)$")
+PLACEHOLDER_RE = re.compile(r"\{(inputs|decisions)\.([A-Za-z0-9_]+)\}")
 
 
 def session_with_token():
@@ -53,7 +66,6 @@ def session_with_token():
 
 
 def get_with_retry(s, url, params=None, attempts=3):
-    """GET with backoff on transient failures; returns Response or None."""
     for attempt in range(attempts):
         try:
             r = s.get(url, params=params, timeout=30)
@@ -79,11 +91,9 @@ def search_code(s):
         url, params = f"{API}/search/code", {"q": query, "per_page": 100}
         while url:
             r = get_with_retry(s, url, params)
-            if r is None or r.status_code == 422:
-                print(f"  code query {query!r} unavailable", file=sys.stderr)
-                break
-            if r.status_code != 200:
-                print(f"  code query {query!r} failed ({r.status_code})", file=sys.stderr)
+            if r is None or r.status_code != 200:
+                code = r.status_code if r is not None else "n/a"
+                print(f"  code query {query!r} failed ({code})", file=sys.stderr)
                 break
             for item in r.json().get("items", []):
                 if item.get("path") == "astra.yaml":
@@ -105,13 +115,11 @@ def search_topics(s):
             continue
         for item in r.json().get("items", []):
             repos[item["full_name"]] = item
-        time.sleep(2)  # repo search: 30 req/min
+        time.sleep(2)
     return repos
 
 
 def is_astra_spec(text):
-    """A root astra.yaml counts as ASTRA if it parses to a mapping with a
-    name and at least one structural ASTRA key."""
     try:
         doc = yaml.safe_load(text)
     except yaml.YAMLError:
@@ -130,8 +138,112 @@ def condense(text, limit):
     return text
 
 
+def is_checkable_path(source):
+    """Local repo path with no URL scheme and no template placeholders."""
+    if not source or "://" in source or source.startswith("/"):
+        return False
+    if "{" in source or "*" in source:
+        return False
+    return True
+
+
+def validate_spec(doc, tree_paths):
+    """Schema + structural validation per the ASTRA reference. Returns a list
+    of human-readable failures; empty list means verified."""
+    errors = []
+
+    unknown = sorted(set(doc) - ALLOWED_TOP_LEVEL)
+    if unknown:
+        errors.append("unknown top-level field(s): " + ", ".join(unknown))
+    if not str(doc.get("version") or "").strip():
+        errors.append("missing top-level 'version'")
+
+    input_ids = set()
+    inputs = doc.get("inputs") or []
+    if not isinstance(inputs, list):
+        errors.append("'inputs' must be a list")
+        inputs = []
+    for i in inputs:
+        if not isinstance(i, dict) or not i.get("id"):
+            errors.append("input entries must be mappings with an 'id'")
+            continue
+        input_ids.add(i["id"])
+        if i.get("from"):
+            continue
+        if not (i.get("source") or i.get("ref")):
+            errors.append(f"input '{i['id']}' declares no source/ref")
+        src = str(i.get("source") or "")
+        if is_checkable_path(src) and tree_paths is not None and src not in tree_paths:
+            errors.append(f"input '{i['id']}' file missing from repo: {src}")
+
+    decision_ids = set()
+    decisions = doc.get("decisions") or {}
+    if decisions and not isinstance(decisions, dict):
+        errors.append("'decisions' must be a mapping")
+        decisions = {}
+    for did, d in decisions.items():
+        decision_ids.add(did)
+        if not isinstance(d, dict):
+            errors.append(f"decision '{did}' must be a mapping")
+            continue
+        if d.get("from"):
+            continue
+        opts = d.get("options")
+        if not isinstance(opts, dict) or not opts:
+            errors.append(f"decision '{did}': options must be a mapping of option-id to {{label: ...}}")
+            continue
+        for oid, o in opts.items():
+            if not isinstance(o, dict) or not o.get("label"):
+                errors.append(f"decision '{did}' option '{oid}' missing required 'label'")
+                break
+        default = d.get("default")
+        if default is None:
+            errors.append(f"decision '{did}' missing 'default'")
+        elif str(default) not in {str(k) for k in opts}:
+            errors.append(f"decision '{did}' default '{default}' is not one of its options")
+
+    outputs = doc.get("outputs") or []
+    if not isinstance(outputs, list):
+        errors.append("'outputs' must be a list")
+        outputs = []
+    # Outputs may consume earlier outputs as inputs (artifact chaining), so
+    # the {inputs.<id>} pool includes both input and output ids.
+    output_ids = {str(o.get("id")) for o in outputs if isinstance(o, dict) and o.get("id")}
+    referable_inputs = input_ids | output_ids
+    for o in outputs:
+        if not isinstance(o, dict) or not o.get("id"):
+            errors.append("output entries must be mappings with an 'id'")
+            continue
+        if o.get("from"):
+            continue
+        recipe = o.get("recipe") or {}
+        command = str(recipe.get("command") or "") if isinstance(recipe, dict) else ""
+        if not command:
+            errors.append(f"output '{o['id']}' has no recipe command")
+            continue
+        for kind, ref in PLACEHOLDER_RE.findall(command):
+            pool = referable_inputs if kind == "inputs" else decision_ids
+            if ref not in pool:
+                errors.append(f"output '{o['id']}' references undeclared {kind[:-1]} '{ref}'")
+        declared = o.get(  # placeholders must also be listed in the output's provenance
+            "inputs"
+        )
+        if isinstance(declared, list):
+            for kind, ref in PLACEHOLDER_RE.findall(command):
+                if kind == "inputs" and ref not in declared:
+                    errors.append(f"output '{o['id']}' uses input '{ref}' not listed in its inputs")
+                    break
+        if tree_paths is not None:
+            for token in command.split():
+                if SCRIPT_EXT_RE.match(token) and "{" not in token:
+                    if token not in tree_paths:
+                        errors.append(f"output '{o['id']}' script missing from repo: {token}")
+                    break
+
+    return errors[:8]
+
+
 def extract_findings(doc):
-    """findings: may be a mapping id -> entry or a list of entries."""
     raw = doc.get("findings")
     entries = []
     if isinstance(raw, dict):
@@ -147,18 +259,67 @@ def extract_findings(doc):
     return out
 
 
-def extract_inputs(doc):
-    out = []
+def fetch_tree(s, full_name, branch):
+    r = get_with_retry(s, f"{API}/repos/{full_name}/git/trees/{branch}", {"recursive": "1"})
+    if r is None or r.status_code != 200:
+        return None
+    data = r.json()
+    blobs = {}
+    for node in data.get("tree", []):
+        if node.get("type") == "blob":
+            blobs[node["path"]] = (node.get("sha"), node.get("size", 0))
+    return blobs
+
+
+def collect_data_files(doc, blobs, repo, branch, analysis_name):
+    """Content-addressed occurrences: declared inputs present in the tree,
+    plus committed files under results/ that belong to a declared output."""
+    occurrences = []
     for i in doc.get("inputs") or []:
         if not isinstance(i, dict):
             continue
-        source = str(i.get("source") or "")
-        dataset = source.rstrip("/").split("/")[-1] if source else ""
-        out.append({
-            "label": condense(i.get("label") or i.get("id") or "", 120),
-            "dataset": dataset,
+        src = str(i.get("source") or "")
+        if is_checkable_path(src) and src in blobs:
+            sha, size = blobs[src]
+            occurrences.append({
+                "hash": sha,
+                "name": src.rstrip("/").split("/")[-1],
+                "path": src,
+                "size": size,
+                "role": "input",
+                "ref_id": i.get("id"),
+                "repo": repo,
+                "branch": branch,
+                "analysis": analysis_name,
+            })
+
+    out_ids = {str(o.get("id")) for o in doc.get("outputs") or [] if isinstance(o, dict) and o.get("id")}
+    candidates = []
+    for path, (sha, size) in blobs.items():
+        if not path.startswith("results/"):
+            continue
+        segments = path.split("/")
+        stem = segments[-1].rsplit(".", 1)[0]
+        matched = next((oid for oid in out_ids if oid in segments[:-1] or oid == stem), None)
+        if matched:
+            candidates.append((len(segments), path, sha, size, matched))
+    candidates.sort()
+    dropped = max(0, len(candidates) - MAX_OUTPUT_FILES_PER_REPO)
+    for depth, path, sha, size, oid in candidates[:MAX_OUTPUT_FILES_PER_REPO]:
+        occurrences.append({
+            "hash": sha,
+            "name": path.rsplit("/", 1)[-1],
+            "path": path,
+            "size": size,
+            "role": "output",
+            "ref_id": oid,
+            "repo": repo,
+            "branch": branch,
+            "analysis": analysis_name,
         })
-    return out[:8]
+    if dropped:
+        print(f"  {repo}: capped committed output files ({dropped} more not hashed)", file=sys.stderr)
+    return occurrences
 
 
 BADGE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="118" height="20" role="img" aria-label="astra: verified">
@@ -177,50 +338,53 @@ BADGE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="118" height="20" r
 """
 
 
-def write_badge(badge_dir, full_name):
-    os.makedirs(badge_dir, exist_ok=True)
-    path = os.path.join(badge_dir, full_name.replace("/", "--") + ".svg")
-    with open(path, "w") as f:
-        f.write(BADGE_SVG)
-
-
 def enrich(s, full_name):
     r = get_with_retry(s, f"{API}/repos/{full_name}")
     if r is None or r.status_code != 200:
         print(f"  skip {full_name}: repo fetch failed", file=sys.stderr)
-        return None
+        return None, []
     repo = r.json()
     branch = repo.get("default_branch", "main")
-    raw = get_with_retry(
-        s, f"https://raw.githubusercontent.com/{full_name}/{branch}/astra.yaml"
-    )
+    raw = get_with_retry(s, f"https://raw.githubusercontent.com/{full_name}/{branch}/astra.yaml")
     if raw is None or raw.status_code != 200:
         print(f"  skip {full_name}: astra.yaml fetch failed", file=sys.stderr)
-        return None
+        return None, []
     doc = is_astra_spec(raw.text)
     if doc is None:
         print(f"  skip {full_name}: astra.yaml is not an ASTRA spec", file=sys.stderr)
-        return None
-    outputs_list = [
-        {"label": condense(o.get("label") or o.get("id") or "", 120), "type": str(o.get("type") or "")}
-        for o in (doc.get("outputs") or [])
-        if isinstance(o, dict)
-    ][:16]
-    return {
+        return None, []
+
+    blobs = fetch_tree(s, full_name, branch)
+    tree_paths = set(blobs) if blobs is not None else None
+    errors = validate_spec(doc, tree_paths)
+    if tree_paths is None:
+        errors = (errors + ["repo tree unavailable; file checks skipped"])[:8]
+
+    astra_name = str(doc.get("name", "")).strip() or None
+    occurrences = collect_data_files(doc, blobs or {}, repo["full_name"], branch, astra_name or repo["full_name"])
+
+    project = {
         "full_name": repo["full_name"],
         "html_url": repo["html_url"],
+        "default_branch": branch,
         "description": condense(doc.get("description") or repo.get("description") or "", 480),
         "stars": repo.get("stargazers_count", 0),
         "pushed_at": repo.get("pushed_at"),
         "topics": (repo.get("topics") or [])[:6],
         "astra_tags": [str(t) for t in (doc.get("tags") or []) if isinstance(t, (str, int))][:6],
-        "astra_name": str(doc.get("name", "")).strip() or None,
-        "outputs_list": outputs_list,
+        "astra_name": astra_name,
+        "outputs_list": [
+            {"label": condense(o.get("label") or o.get("id") or "", 120), "type": str(o.get("type") or "")}
+            for o in (doc.get("outputs") or [])
+            if isinstance(o, dict)
+        ][:16],
         "outputs": len(doc.get("outputs") or []),
-        "inputs_list": extract_inputs(doc),
-        "findings_list": extract_findings(doc),
         "inputs": len(doc.get("inputs") or []),
+        "findings_list": extract_findings(doc),
+        "verified": not errors,
+        "verification_errors": errors,
     }
+    return project, occurrences
 
 
 def main():
@@ -230,7 +394,6 @@ def main():
 
     s = session_with_token()
     repos = {}
-
     for name, channel in (("code search", search_code), ("topic search", search_topics)):
         print(f"discovering via {name}...", file=sys.stderr)
         try:
@@ -242,8 +405,6 @@ def main():
             print(f"  {name} crashed:", file=sys.stderr)
             traceback.print_exc()
 
-    # Code search never indexes forks, so the repo hosting this index (a fork)
-    # would be invisible to itself.
     self_repo = os.environ.get("GITHUB_REPOSITORY")
     if self_repo:
         repos.setdefault(self_repo, {"full_name": self_repo})
@@ -257,36 +418,61 @@ def main():
 
     print(f"{len(repos)} candidate repos total", file=sys.stderr)
 
-    badge_dir = os.path.join(os.path.dirname(os.path.abspath(args.out)), "badges")
-    projects = []
+    site_dir = os.path.dirname(os.path.abspath(args.out))
+    badge_dir = os.path.join(site_dir, "badges")
+    os.makedirs(badge_dir, exist_ok=True)
+
+    projects, all_occurrences = [], []
     for full_name in sorted(repos):
         try:
-            p = enrich(s, full_name)
+            p, occs = enrich(s, full_name)
         except Exception:
             print(f"  {full_name} crashed during enrich:", file=sys.stderr)
             traceback.print_exc()
             continue
         if p:
             projects.append(p)
-            write_badge(badge_dir, p["full_name"])
-            print(f"  + {full_name} ({p['stars']}★)", file=sys.stderr)
+            all_occurrences.extend(occs)
+            if p["verified"]:
+                with open(os.path.join(badge_dir, p["full_name"].replace("/", "--") + ".svg"), "w") as f:
+                    f.write(BADGE_SVG)
+            status = "verified" if p["verified"] else "indexed"
+            print(f"  + {full_name} ({status})", file=sys.stderr)
 
     if not projects:
         sys.exit("error: no valid projects found — refusing to overwrite the index")
 
-    projects.sort(key=lambda p: (-p["stars"], p["full_name"].lower()))
-    out = {
-        "generated_at": datetime.datetime.now(datetime.timezone.utc)
+    now = (
+        datetime.datetime.now(datetime.timezone.utc)
         .replace(microsecond=0)
         .isoformat()
-        .replace("+00:00", "Z"),
-        "count": len(projects),
-        "projects": projects,
-    }
+        .replace("+00:00", "Z")
+    )
+
+    projects.sort(key=lambda p: (-p["stars"], p["full_name"].lower()))
     with open(args.out, "w") as f:
-        json.dump(out, f, indent=2)
+        json.dump({"generated_at": now, "count": len(projects), "projects": projects}, f, indent=2)
         f.write("\n")
-    print(f"wrote {args.out} with {len(projects)} projects", file=sys.stderr)
+
+    datasets = {}
+    for occ in all_occurrences:
+        d = datasets.setdefault(occ["hash"], {"hash": occ["hash"], "names": [], "occurrences": []})
+        if occ["name"] not in d["names"]:
+            d["names"].append(occ["name"])
+        if len(d["occurrences"]) < 40:
+            d["occurrences"].append(occ)
+    dataset_list = sorted(
+        datasets.values(),
+        key=lambda d: (-len({o["repo"] for o in d["occurrences"]}), d["names"][0].lower()),
+    )
+    with open(os.path.join(site_dir, "datasets.json"), "w") as f:
+        json.dump({"generated_at": now, "count": len(dataset_list), "datasets": dataset_list}, f, indent=2)
+        f.write("\n")
+
+    print(
+        f"wrote {args.out} ({len(projects)} projects) and datasets.json ({len(dataset_list)} files)",
+        file=sys.stderr,
+    )
 
 
 if __name__ == "__main__":
