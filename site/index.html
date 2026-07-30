@@ -3,64 +3,50 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ASTRA Finder — every ASTRA analysis on GitHub</title>
-  <meta name="description" content="A sweep of GitHub for every public repository carrying an astra.yaml at its root — reproducible, decision-tracked scientific analyses.">
+  <title>ASTRA Discoverability</title>
+  <meta name="description" content="An index of reproducible ASTRA analyses on GitHub.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>✴</text></svg>">
 </head>
 <body>
   <header class="site-header">
     <div class="header-inner">
-      <a class="wordmark" href="./"><span class="wordmark-glyph">✴</span> astra-finder</a>
+      <a class="wordmark" href="./">ASTRA Discoverability</a>
       <nav class="header-nav">
-        <a href="#observations">Index</a>
-        <a href="https://github.com/VerisimilitudeX/astra-finder" target="_blank" rel="noopener">Source</a>
+        <a href="https://github.com/VerisimilitudeX/astra-finder" target="_blank" rel="noopener">GitHub</a>
       </nav>
     </div>
   </header>
 
   <main class="page">
-    <section class="hero">
-      <pre class="ascii" aria-label="ASTRA">
- █████╗ ███████╗████████╗██████╗  █████╗
-██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔══██╗
-███████║███████╗   ██║   ██████╔╝███████║
-██╔══██║╚════██║   ██║   ██╔══██╗██╔══██║
-██║  ██║███████║   ██║   ██║  ██║██║  ██║
-╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝</pre>
-      <p class="hero-tagline">// every astra analysis on github</p>
+    <section class="intro">
+      <h1>ASTRA Discoverability</h1>
+      <p class="intro-sub">An index of reproducible ASTRA analyses on GitHub.</p>
     </section>
 
-    <section class="board" id="observations">
-      <div class="board-bar">
-        <div class="tabs" role="tablist">
-          <button class="tab active" data-sort="stars" role="tab" aria-selected="true">most starred</button>
-          <button class="tab" data-sort="updated" role="tab" aria-selected="false">recently active</button>
+    <section class="board" id="index">
+      <div class="controls">
+        <input type="search" id="search" placeholder="Search analyses" autocomplete="off" spellcheck="false">
+        <div class="controls-right">
+          <div class="sorts" role="tablist">
+            <button class="sort active" data-sort="stars" role="tab" aria-selected="true">Most starred</button>
+            <button class="sort" data-sort="updated" role="tab" aria-selected="false">Recently active</button>
+          </div>
+          <span class="count"><span id="count-all">0</span> analyses</span>
         </div>
-        <span class="board-count"><span id="count-all">0</span> analyses indexed</span>
-      </div>
-
-      <div class="search-wrap">
-        <span class="search-prompt" aria-hidden="true">❯</span>
-        <input type="search" id="search" placeholder="filter by name, owner, or topic…" autocomplete="off" spellcheck="false">
       </div>
 
       <ol class="rows" id="rows"></ol>
-      <p class="empty" id="empty" hidden>no analyses match — clear the filter to see the full index.</p>
+      <p class="empty" id="empty" hidden>Nothing matches that search.</p>
     </section>
   </main>
 
   <footer class="site-footer">
     <div class="footer-inner">
-      <span>index refreshed <span id="refreshed">—</span> · resweeps every 6h via the GitHub API</span>
-      <span class="footer-links">
-        <a href="https://github.com/VerisimilitudeX/astra-finder/blob/master/astra.yaml" target="_blank" rel="noopener">example astra.yaml</a>
-        <a href="https://github.com/search?q=filename%3Aastra.yaml+path%3A%2F&type=code" target="_blank" rel="noopener">raw search</a>
-        <a href="https://github.com/VerisimilitudeX/astra-finder" target="_blank" rel="noopener">github</a>
-      </span>
+      <span>Index refreshed <span id="refreshed">—</span>. Rebuilt every six hours from the GitHub API.</span>
+      <a href="https://github.com/VerisimilitudeX/astra-finder" target="_blank" rel="noopener">Source</a>
     </div>
   </footer>
 

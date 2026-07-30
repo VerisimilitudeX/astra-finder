@@ -6,13 +6,40 @@
     {
       "full_name": "VerisimilitudeX/astra-finder",
       "html_url": "https://github.com/VerisimilitudeX/astra-finder",
-      "description": "Union2.1 flat LCDM Hubble-diagram fit — reference ASTRA analysis",
+      "description": "Union2.1 flat LCDM Hubble-diagram fit \u2014 reference ASTRA analysis",
       "stars": 0,
       "pushed_at": "2026-07-30T13:52:54Z",
-      "topics": ["astra", "cosmology"],
+      "topics": [
+        "astra",
+        "cosmology",
+        "reproducible-research",
+        "supernovae"
+      ],
+      "astra_tags": [],
       "astra_name": "Union2.1 Flat LCDM Fit",
-      "outputs": 6,
-      "decisions": 4,
+      "outputs_list": [
+        {
+          "label": "Cosmological fit result",
+          "type": "data"
+        },
+        {
+          "label": "H0 best fit",
+          "type": "metric"
+        },
+        {
+          "label": "Omega_Lambda best fit",
+          "type": "metric"
+        },
+        {
+          "label": "Hubble diagram",
+          "type": "figure"
+        },
+        {
+          "label": "Confidence contour",
+          "type": "figure"
+        }
+      ],
+      "outputs": 5,
       "inputs": 2
     }
   ]
