@@ -8,7 +8,6 @@
   var searchEl = document.getElementById("search");
   var countEl = document.getElementById("count-all");
   var refreshedEl = document.getElementById("refreshed");
-  var lineageEl = document.getElementById("lineage");
 
   function formatStars(n) {
     if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
@@ -45,14 +44,22 @@
     return p.astra_name || (p.full_name || "").split("/")[1] || p.full_name;
   }
 
-  // repo -> {hashes: Set-like object, names: []} derived from datasets.json
+  // repo -> {hashes: Set-like object, names: [], files: []} from datasets.json
   function buildRepoData() {
     var map = {};
     state.datasets.forEach(function (d) {
       (d.occurrences || []).forEach(function (o) {
-        var entry = (map[o.repo] = map[o.repo] || { hashes: {}, names: [] });
+        var entry = (map[o.repo] = map[o.repo] || { hashes: {}, names: [], files: [] });
+        if (!entry.hashes[d.hash]) {
+          entry.files.push({ hash: d.hash, name: o.name, role: o.role, path: o.path, branch: o.branch, repo: o.repo });
+        }
         entry.hashes[d.hash] = true;
         if (entry.names.indexOf(o.name) === -1) entry.names.push(o.name);
+      });
+    });
+    Object.keys(map).forEach(function (r) {
+      map[r].files.sort(function (a, b) {
+        return a.role === b.role ? a.name.localeCompare(b.name) : a.role === "input" ? -1 : 1;
       });
     });
     state.repoData = map;
@@ -80,10 +87,11 @@
     return list;
   }
 
+  var CANONICAL_BASE = "https://verisimilitudex.github.io/astra-finder/";
+
   function badgeMarkdown(p) {
-    var base = new URL(".", location.href).href;
-    var img = base + "badges/" + p.full_name.replace("/", "--") + ".svg";
-    return "[![ASTRA verified](" + img + ")](" + base + ")";
+    var img = CANONICAL_BASE + "badges/" + p.full_name.replace("/", "--") + ".svg";
+    return "[![ASTRA verified](" + img + ")](" + CANONICAL_BASE + ")";
   }
 
   function sameDataAnalyses(p) {
@@ -126,6 +134,24 @@
       .join("");
     if (outputs) {
       html += '<div class="detail-section"><span class="detail-label">Outputs</span><ul class="outputs">' + outputs + "</ul></div>";
+    }
+
+    var files = ((state.repoData[p.full_name] || {}).files || [])
+      .slice(0, 12)
+      .map(function (f) {
+        var raw = "https://raw.githubusercontent.com/" + f.repo + "/" + f.branch + "/" + f.path;
+        return (
+          "<li>" +
+          '<span><a class="file-link" href="dataset.html?h=' + escapeHtml(f.hash) + '">' + escapeHtml(f.name) + "</a>" +
+          '<code class="dataset-hash">' + escapeHtml(f.hash.slice(0, 12)) + "</code></span>" +
+          '<span class="file-side"><span class="role role-' + escapeHtml(f.role) + '">' + escapeHtml(f.role) + "</span>" +
+          '<a class="raw-link" href="' + escapeHtml(raw) + '" target="_blank" rel="noopener">raw ↗</a></span>' +
+          "</li>"
+        );
+      })
+      .join("");
+    if (files) {
+      html += '<div class="detail-section"><span class="detail-label">Data files</span><ul class="outputs datafiles">' + files + "</ul></div>";
     }
 
     var siblings = sameDataAnalyses(p)
@@ -199,40 +225,6 @@
           "</button>" +
           (isOpen ? detailHtml(p) : "") +
           "</li>"
-        );
-      })
-      .join("");
-    renderLineage();
-  }
-
-  function renderLineage() {
-    if (!lineageEl) return;
-    if (!state.datasets.length) {
-      lineageEl.innerHTML = '<p class="lineage-empty">No data files hashed yet.</p>';
-      return;
-    }
-    lineageEl.innerHTML = state.datasets
-      .map(function (d) {
-        var repos = [];
-        (d.occurrences || []).forEach(function (o) {
-          if (repos.indexOf(o.repo) === -1) repos.push(o.repo);
-        });
-        var uses = repos
-          .map(function (r) {
-            var p = state.projects.find(function (x) { return x.full_name === r; });
-            var name = p ? displayName(p) : r;
-            return '<button class="link-btn" data-open="' + escapeHtml(r) + '">' + escapeHtml(name) + "</button>";
-          })
-          .join('<span class="sep">·</span>');
-        return (
-          '<div class="dataset-row">' +
-          '<div class="dataset-head">' +
-          '<a class="dataset-name" href="dataset.html?h=' + escapeHtml(d.hash) + '">' + escapeHtml(d.names[0]) + "</a>" +
-          '<code class="dataset-hash">' + escapeHtml(d.hash.slice(0, 12)) + "</code>" +
-          '<span class="dataset-count">' + repos.length + (repos.length === 1 ? " analysis" : " analyses") + "</span>" +
-          "</div>" +
-          '<div class="dataset-uses">' + uses + "</div>" +
-          "</div>"
         );
       })
       .join("");

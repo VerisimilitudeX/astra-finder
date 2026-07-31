@@ -139,10 +139,10 @@ def condense(text, limit):
 
 
 def is_checkable_path(source):
-    """Local repo path with no URL scheme and no template placeholders."""
+    """Local repo path with no URL scheme, template placeholders, or prose."""
     if not source or "://" in source or source.startswith("/"):
         return False
-    if "{" in source or "*" in source:
+    if "{" in source or "*" in source or " " in source:
         return False
     return True
 
@@ -236,7 +236,9 @@ def validate_spec(doc, tree_paths):
         if tree_paths is not None:
             for token in command.split():
                 if SCRIPT_EXT_RE.match(token) and "{" not in token:
-                    if token not in tree_paths:
+                    if token.startswith("/"):
+                        errors.append(f"output '{o['id']}' recipe uses a script outside the repository: {token}")
+                    elif token not in tree_paths:
                         errors.append(f"output '{o['id']}' script missing from repo: {token}")
                     break
 
@@ -264,6 +266,9 @@ def fetch_tree(s, full_name, branch):
     if r is None or r.status_code != 200:
         return None
     data = r.json()
+    if data.get("truncated"):
+        # An incomplete listing would produce false "file missing" verdicts.
+        return None
     blobs = {}
     for node in data.get("tree", []):
         if node.get("type") == "blob":

@@ -271,6 +271,16 @@ a { color: inherit; text-decoration: none; }
   color: var(--faint);
 }
 
+.datafiles li { max-width: 560px; }
+
+.file-link { color: var(--accent); font-weight: 500; }
+
+.file-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.datafiles .dataset-hash { margin-left: 8px; }
+
+.file-side { display: inline-flex; align-items: center; gap: 10px; }
+
 .tag-list { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .tag {
