@@ -108,7 +108,7 @@
         (d.occurrences || []).forEach(function (o) {
           if (o.repo !== repo || hashes[d.hash]) return;
           hashes[d.hash] = true;
-          files.push({ hash: d.hash, name: o.name, role: o.role, path: o.path, branch: o.branch });
+          files.push({ hash: d.hash, name: o.name, role: o.role, path: o.path, branch: o.branch, source_repo: o.source_repo });
         });
       });
       files.sort(function (a, b) {
@@ -168,16 +168,45 @@
       var files = mine.files
         .map(function (f) {
           var raw = "https://raw.githubusercontent.com/" + p.full_name + "/" + f.branch + "/" + f.path;
+          var from = f.source_repo
+            ? /^[\w.-]+\/[\w.-]+$/.test(f.source_repo)
+              ? '<a class="source-from" href="' + escapeHtml(repoUrl(f.source_repo)) + '">from ' + escapeHtml(f.source_repo) + "</a>"
+              : '<span class="source-from">from ' + escapeHtml(f.source_repo) + "</span>"
+            : "";
           return (
             "<li>" +
             '<span><a class="file-link" href="dataset.html?h=' + escapeHtml(f.hash) + '">' + escapeHtml(f.name) + "</a>" +
             '<code class="dataset-hash">' + escapeHtml(f.hash.slice(0, 12)) + "</code></span>" +
-            '<span class="file-side"><span class="role role-' + escapeHtml(f.role) + '">' + escapeHtml(f.role) + "</span>" +
+            '<span class="file-side">' + from + '<span class="role role-' + escapeHtml(f.role) + '">' + escapeHtml(f.role) + "</span>" +
             '<a class="raw-link" href="' + escapeHtml(raw) + '" target="_blank" rel="noopener">raw ↗</a></span>' +
             "</li>"
           );
         })
         .join("");
+      var sources = (p.sources_list || [])
+        .map(function (s) {
+          var where = s.github
+            ? '<a class="link-btn" href="' + escapeHtml(repoUrl(s.github)) + '">' + escapeHtml(s.github) + "</a>" +
+              '<a class="occ-repo" href="https://github.com/' + escapeHtml(s.github) + '" target="_blank" rel="noopener">↗</a>'
+            : "<code>" + escapeHtml(s.uri || s.id) + "</code>";
+          var pin = s.ref ? '<code class="dataset-hash" title="Pinned revision">@' + escapeHtml(s.ref.slice(0, 12)) + "</code>" : "";
+          var uses = s.artifacts && s.artifacts.length
+            ? '<span class="finding-claim">consumes ' + s.artifacts.map(escapeHtml).join(", ") +
+              (s.contexts && s.contexts.length ? " · via " + s.contexts.map(escapeHtml).join(", ") : "") + "</span>"
+            : "";
+          return (
+            "<li>" +
+            '<span class="finding-label">' + escapeHtml(s.label || s.id) + "</span>" +
+            '<span class="source-where">' + where + pin + "</span>" +
+            uses +
+            "</li>"
+          );
+        })
+        .join("");
+      if (sources) {
+        html += '<div class="detail-section"><span class="detail-label">Inputs from other repositories</span><ul class="findings sources">' + sources + "</ul></div>";
+      }
+
       if (files) {
         html += '<div class="detail-section"><span class="detail-label">Data files</span><ul class="outputs datafiles">' + files + "</ul></div>";
       }

@@ -47,10 +47,131 @@ SEARCH_THROTTLE_S = 7  # code search: 10 req/min
 ALLOWED_TOP_LEVEL = {
     "id", "version", "name", "description", "tags", "inputs", "outputs",
     "decisions", "prior_insights", "findings", "analyses", "container",
+    "sources", "universes", "multiverses",
 }
 MAX_OUTPUT_FILES_PER_REPO = 24
 SCRIPT_EXT_RE = re.compile(r"^[\w./-]+\.(py|r|R|sh|jl|ipynb)$")
 PLACEHOLDER_RE = re.compile(r"\{(inputs|decisions)\.([A-Za-z0-9_]+)\}")
+
+# Cross-repo reference grammar (astra-spec issues #52/#55 drafts):
+#   [source_id:]artifact_or_regex[#universe_or_multiverse]
+# and, inside multiverse universe lists, source@commit for a source pinned at
+# a historical revision.
+INPUT_REF_RE = re.compile(
+    r"^(?:(?P<source>[A-Za-z_][A-Za-z0-9_-]*):)?(?P<artifact>[^#\s]+?)(?:#(?P<context>[A-Za-z0-9_.-]+))?$"
+)
+SOURCE_AT_COMMIT_RE = re.compile(r"^(?P<source>[A-Za-z_][A-Za-z0-9_-]*)@(?P<commit>[0-9a-f]{7,40})$")
+
+
+def parse_input_ref(text):
+    """Parse '[source:]artifact[#context]'; returns a dict or None."""
+    m = INPUT_REF_RE.match(str(text or "").strip())
+    if not m or not m.group("artifact"):
+        return None
+    return {
+        "source": m.group("source"),
+        "artifact": m.group("artifact"),
+        "context": m.group("context"),
+    }
+
+
+def parse_sources(doc):
+    """The draft 'sources:' registry: external analyses this one draws inputs
+    from. Accepts github: owner/repo, uri:/repo_uri: (local or remote), and an
+    optional pinned ref:/commit:."""
+    out = {}
+    raw = doc.get("sources")
+    if not isinstance(raw, list):
+        return out
+    for entry in raw:
+        if not isinstance(entry, dict) or not entry.get("id"):
+            continue
+        github = str(entry.get("github") or "").strip().strip("/")
+        uri = str(entry.get("repo_uri") or entry.get("uri") or "").strip()
+        if not github and "github.com/" in uri:
+            github = uri.split("github.com/")[-1].strip("/")
+            if github.endswith(".git"):
+                github = github[:-4]
+        out[str(entry["id"])] = {
+            "id": str(entry["id"]),
+            "label": condense(entry.get("label") or entry["id"], 120),
+            "github": github or None,
+            "uri": uri or None,
+            "ref": str(entry.get("ref") or entry.get("commit") or "").strip() or None,
+        }
+    return out
+
+
+def artifact_matches(pattern, name):
+    """A reference artifact may be a plain id or a regex (e.g. '.*_p')."""
+    if pattern == name:
+        return True
+    if any(c in pattern for c in ".*?[]()|+^$"):
+        try:
+            return re.fullmatch(pattern, name) is not None
+        except re.error:
+            return False
+    return False
+
+
+def iter_insight_entries(doc):
+    for group in ("prior_insights", "findings"):
+        raw = doc.get(group)
+        entries = raw.values() if isinstance(raw, dict) else raw if isinstance(raw, list) else []
+        for e in entries:
+            if isinstance(e, dict):
+                yield e
+
+
+def collect_source_refs(doc, sources):
+    """Which artifacts (and universe/multiverse contexts) each source is
+    consumed through, gathered from input refs and insight evidence."""
+    refs = {sid: {"artifacts": set(), "contexts": set()} for sid in sources}
+
+    def add(text):
+        ref = parse_input_ref(text)
+        if ref and ref["source"] in refs:
+            refs[ref["source"]]["artifacts"].add(ref["artifact"])
+            if ref["context"]:
+                refs[ref["source"]]["contexts"].add(ref["context"])
+
+    for i in doc.get("inputs") or []:
+        if isinstance(i, str):
+            add(i)
+        elif isinstance(i, dict) and str(i.get("source") or "") in refs:
+            # Dict form of a source-qualified input: source: + output_id:
+            sid = str(i["source"])
+            refs[sid]["artifacts"].add(str(i.get("output_id") or i.get("id") or ""))
+            if i.get("universe"):
+                refs[sid]["contexts"].add(str(i["universe"]))
+    for o in doc.get("outputs") or []:
+        if isinstance(o, dict):
+            for i in o.get("inputs") or []:
+                if isinstance(i, str):
+                    add(i)
+    for e in iter_insight_entries(doc):
+        for ev in e.get("evidence") or []:
+            if isinstance(ev, dict) and ev.get("artifact"):
+                add(str(ev["artifact"]))
+    return refs
+
+
+def snapshot_dirs(doc, sources):
+    """Committed snapshot directories of upstream artifacts, declared as
+    insight evidence with snapshot: + a source-qualified artifact:. Files under
+    these paths are cached copies of another repo's outputs, not this repo's."""
+    snaps = []
+    for e in iter_insight_entries(doc):
+        for ev in e.get("evidence") or []:
+            if not isinstance(ev, dict):
+                continue
+            snap = str(ev.get("snapshot") or "").strip().strip("/")
+            if not snap:
+                continue
+            ref = parse_input_ref(str(ev.get("artifact") or ""))
+            src = sources.get(ref["source"]) if ref and ref["source"] else None
+            snaps.append((snap + "/", src))
+    return snaps
 
 
 def session_with_token():
@@ -160,23 +281,60 @@ def validate_spec(doc, tree_paths):
     if not str(doc.get("version") or "").strip():
         errors.append("missing top-level 'version'")
 
+    sources = parse_sources(doc)
+    raw_sources = doc.get("sources")
+    if raw_sources is not None and not isinstance(raw_sources, list):
+        errors.append("'sources' must be a list")
+    for entry in raw_sources if isinstance(raw_sources, list) else []:
+        if not isinstance(entry, dict) or not entry.get("id"):
+            errors.append("source entries must be mappings with an 'id'")
+        elif not (entry.get("github") or entry.get("uri") or entry.get("repo_uri")):
+            errors.append(f"source '{entry['id']}' declares no github/uri/repo_uri")
+
+    outputs = doc.get("outputs") or []
+    if not isinstance(outputs, list):
+        errors.append("'outputs' must be a list")
+        outputs = []
+    output_ids = {str(o.get("id")) for o in outputs if isinstance(o, dict) and o.get("id")}
+
+    def check_ref(text, pool):
+        """Validate one '[source:]artifact[#context]' reference string."""
+        ref = parse_input_ref(text)
+        if not ref:
+            errors.append(f"input reference '{text}' is not parseable")
+            return
+        if ref["source"]:
+            if ref["source"] not in sources:
+                errors.append(f"input '{text}' names undeclared source '{ref['source']}'")
+            return  # artifact/context live in the source repo; not checkable here
+        if not any(artifact_matches(ref["artifact"], p) for p in pool):
+            errors.append(f"input '{text}' matches no declared input or output")
+
     input_ids = set()
     inputs = doc.get("inputs") or []
     if not isinstance(inputs, list):
         errors.append("'inputs' must be a list")
         inputs = []
+    string_input_refs = []
     for i in inputs:
+        if isinstance(i, str):
+            string_input_refs.append(i)  # checked once output ids are in the pool
+            continue
         if not isinstance(i, dict) or not i.get("id"):
             errors.append("input entries must be mappings with an 'id'")
             continue
         input_ids.add(i["id"])
         if i.get("from"):
             continue
+        src = str(i.get("source") or "")
+        if src in sources:
+            continue  # source-registry reference, not a file path
         if not (i.get("source") or i.get("ref")):
             errors.append(f"input '{i['id']}' declares no source/ref")
-        src = str(i.get("source") or "")
         if is_checkable_path(src) and tree_paths is not None and src not in tree_paths:
             errors.append(f"input '{i['id']}' file missing from repo: {src}")
+    for text in string_input_refs:
+        check_ref(text, input_ids | output_ids)
 
     decision_ids = set()
     decisions = doc.get("decisions") or {}
@@ -204,13 +362,50 @@ def validate_spec(doc, tree_paths):
         elif str(default) not in {str(k) for k in opts}:
             errors.append(f"decision '{did}' default '{default}' is not one of its options")
 
-    outputs = doc.get("outputs") or []
-    if not isinstance(outputs, list):
-        errors.append("'outputs' must be a list")
-        outputs = []
+    universe_ids = set()
+    universes = doc.get("universes")
+    if universes is not None and not isinstance(universes, list):
+        errors.append("'universes' must be a list")
+    for u in universes if isinstance(universes, list) else []:
+        if not isinstance(u, dict) or not u.get("id"):
+            errors.append("universe entries must be mappings with an 'id'")
+            continue
+        universe_ids.add(str(u["id"]))
+        selections = u.get("decisions")
+        for did, opt in (selections.items() if isinstance(selections, dict) else []):
+            d = decisions.get(did)
+            if not isinstance(d, dict):
+                errors.append(f"universe '{u['id']}' selects unknown decision '{did}'")
+            elif (
+                isinstance(opt, str) and opt != "*"
+                and isinstance(d.get("options"), dict)
+                and opt not in {str(k) for k in d["options"]}
+            ):
+                errors.append(f"universe '{u['id']}': '{did}' has no option '{opt}'")
+
+    multiverse_ids = set()
+    multiverses = doc.get("multiverses")
+    if multiverses is not None and not isinstance(multiverses, list):
+        errors.append("'multiverses' must be a list")
+    for m in multiverses if isinstance(multiverses, list) else []:
+        if not isinstance(m, dict) or not m.get("id"):
+            errors.append("multiverse entries must be mappings with an 'id'")
+            continue
+        multiverse_ids.add(str(m["id"]))
+        members = m.get("universes")
+        if members is None and not isinstance(m.get("decisions"), dict):
+            errors.append(f"multiverse '{m['id']}' declares neither universes nor decisions")
+        for member in members if isinstance(members, list) else []:
+            member = str(member)
+            at = SOURCE_AT_COMMIT_RE.match(member)
+            if at:
+                if at.group("source") not in sources:
+                    errors.append(f"multiverse '{m['id']}' pins undeclared source '{at.group('source')}'")
+            elif member != "*" and member not in universe_ids:
+                errors.append(f"multiverse '{m['id']}' references unknown universe '{member}'")
+
     # Outputs may consume earlier outputs as inputs (artifact chaining), so
     # the {inputs.<id>} pool includes both input and output ids.
-    output_ids = {str(o.get("id")) for o in outputs if isinstance(o, dict) and o.get("id")}
     referable_inputs = input_ids | output_ids
     for o in outputs:
         if not isinstance(o, dict) or not o.get("id"):
@@ -218,6 +413,14 @@ def validate_spec(doc, tree_paths):
             continue
         if o.get("from"):
             continue
+        for i in o.get("inputs") or [] if isinstance(o.get("inputs"), list) else []:
+            if isinstance(i, str) and i not in referable_inputs:
+                check_ref(i, referable_inputs)
+        location = o.get("location")
+        if location is not None:
+            path = location.get("path") if isinstance(location, dict) else location
+            if not str(path or "").strip():
+                errors.append(f"output '{o['id']}' location declares no path")
         recipe = o.get("recipe") or {}
         command = str(recipe.get("command") or "") if isinstance(recipe, dict) else ""
         if not command:
@@ -278,9 +481,11 @@ def fetch_tree(s, full_name, branch):
     return blobs
 
 
-def collect_data_files(doc, blobs, repo, branch, analysis_name):
+def collect_data_files(doc, blobs, repo, branch, analysis_name, sources):
     """Content-addressed occurrences: declared inputs present in the tree,
-    plus committed files under results/ that belong to a declared output."""
+    committed snapshots of upstream artifacts (inputs attributed to their
+    source repo), and committed files under results/ that belong to a
+    declared output."""
     occurrences = []
     for i in doc.get("inputs") or []:
         if not isinstance(i, dict):
@@ -300,10 +505,39 @@ def collect_data_files(doc, blobs, repo, branch, analysis_name):
                 "analysis": analysis_name,
             })
 
+    # Snapshot copies of another repo's outputs are inputs here, never this
+    # repo's outputs — this is what makes one repo's output another's input
+    # on the shared content-addressed page.
+    snaps = snapshot_dirs(doc, sources)
+    snapshot_paths = set()
+    for path, (sha, size) in sorted(blobs.items()):
+        hit = next((s for s in snaps if path.startswith(s[0])), None)
+        if hit is None:
+            continue
+        snapshot_paths.add(path)
+        if len(snapshot_paths) > MAX_OUTPUT_FILES_PER_REPO:
+            continue
+        src_info = hit[1]
+        occ = {
+            "hash": sha,
+            "name": path.rsplit("/", 1)[-1],
+            "path": path,
+            "size": size,
+            "role": "input",
+            "ref_id": path.rsplit("/", 1)[-1].rsplit(".", 1)[0],
+            "repo": repo,
+            "branch": branch,
+            "analysis": analysis_name,
+        }
+        if src_info:
+            occ["source_repo"] = src_info.get("github") or src_info.get("uri")
+            occ["source_label"] = src_info.get("label")
+        occurrences.append(occ)
+
     out_ids = {str(o.get("id")) for o in doc.get("outputs") or [] if isinstance(o, dict) and o.get("id")}
     candidates = []
     for path, (sha, size) in blobs.items():
-        if not path.startswith("results/"):
+        if not path.startswith("results/") or path in snapshot_paths:
             continue
         segments = path.split("/")
         stem = segments[-1].rsplit(".", 1)[0]
@@ -379,7 +613,23 @@ def enrich(s, full_name):
         errors = (errors + ["repo tree unavailable; file checks skipped"])[:8]
 
     astra_name = str(doc.get("name", "")).strip() or None
-    occurrences = collect_data_files(doc, blobs or {}, repo["full_name"], branch, astra_name or repo["full_name"])
+    sources = parse_sources(doc)
+    occurrences = collect_data_files(
+        doc, blobs or {}, repo["full_name"], branch, astra_name or repo["full_name"], sources
+    )
+    source_refs = collect_source_refs(doc, sources)
+    sources_list = []
+    for sid, src in sources.items():
+        refs = source_refs.get(sid, {"artifacts": set(), "contexts": set()})
+        sources_list.append({
+            "id": sid,
+            "label": src["label"],
+            "github": src["github"],
+            "uri": src["uri"],
+            "ref": src["ref"],
+            "artifacts": sorted(a for a in refs["artifacts"] if a)[:12],
+            "contexts": sorted(refs["contexts"])[:6],
+        })
 
     project = {
         "full_name": repo["full_name"],
@@ -399,6 +649,7 @@ def enrich(s, full_name):
         "outputs": len(doc.get("outputs") or []),
         "inputs": len(doc.get("inputs") or []),
         "findings_list": extract_findings(doc),
+        "sources_list": sources_list,
         "verified": not errors,
         "verification_errors": errors,
     }

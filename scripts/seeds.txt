@@ -2,3 +2,5 @@
 # Escape hatch for repos GitHub code search misses (new repos not yet
 # indexed, forks, etc.). Entries still pass astra.yaml validation.
 anthonyozerov/astra-multiverse-example
+anthonyozerov/astra-multiverse-example-steegen-2
+JacopoTeneggi/astra-multiverse
