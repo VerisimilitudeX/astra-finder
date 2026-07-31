@@ -5,7 +5,9 @@ Outputs:
   site/projects.json   one entry per repo with a root astra.yaml
   site/datasets.json   content-addressed data files (git blob SHA) with every
                        repo that carries them as an input or committed output
-  site/badges/*.svg    verification badge, written ONLY for verified repos
+  site/badges/*.svg    verification badge for every indexed repo — blue
+                       "astra | verified" when validation passes, red
+                       "astra | failing" otherwise (same URL either way)
 
 Discovery channels (each independently fault-tolerant): code search, topic
 search, the host repo itself, and scripts/seeds.txt.
@@ -327,17 +329,28 @@ def collect_data_files(doc, blobs, repo, branch, analysis_name):
     return occurrences
 
 
-BADGE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="118" height="20" role="img" aria-label="astra: verified">
+BADGE_STATUSES = {
+    # status -> (right-panel width, right-panel color)
+    "verified": (71, "#23479f"),
+    "failing": (57, "#c8442d"),
+}
+
+
+def badge_svg(status):
+    right_w, color = BADGE_STATUSES[status]
+    total = 47 + right_w
+    text_x = 47 + right_w // 2
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{total}" height="20" role="img" aria-label="astra: {status}">
   <linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#fff" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
-  <clipPath id="r"><rect width="118" height="20" rx="3" fill="#fff"/></clipPath>
+  <clipPath id="r"><rect width="{total}" height="20" rx="3" fill="#fff"/></clipPath>
   <g clip-path="url(#r)">
     <rect width="47" height="20" fill="#40434a"/>
-    <rect x="47" width="71" height="20" fill="#23479f"/>
-    <rect width="118" height="20" fill="url(#s)"/>
+    <rect x="47" width="{right_w}" height="20" fill="{color}"/>
+    <rect width="{total}" height="20" fill="url(#s)"/>
   </g>
   <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
     <text x="24" y="14">astra</text>
-    <text x="82" y="14">verified</text>
+    <text x="{text_x}" y="14">{status}</text>
   </g>
 </svg>
 """
@@ -438,9 +451,8 @@ def main():
         if p:
             projects.append(p)
             all_occurrences.extend(occs)
-            if p["verified"]:
-                with open(os.path.join(badge_dir, p["full_name"].replace("/", "--") + ".svg"), "w") as f:
-                    f.write(BADGE_SVG)
+            with open(os.path.join(badge_dir, p["full_name"].replace("/", "--") + ".svg"), "w") as f:
+                f.write(badge_svg("verified" if p["verified"] else "failing"))
             status = "verified" if p["verified"] else "indexed"
             print(f"  + {full_name} ({status})", file=sys.stderr)
 
