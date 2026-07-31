@@ -89,9 +89,21 @@
 
   var CANONICAL_BASE = "https://verisimilitudex.github.io/astra-finder/";
 
+  function badgeAlt(p) {
+    return p.verified ? "ASTRA verified" : "ASTRA failing";
+  }
+
   function badgeMarkdown(p) {
     var img = CANONICAL_BASE + "badges/" + p.full_name.replace("/", "--") + ".svg";
-    return "[![ASTRA verified](" + img + ")](" + CANONICAL_BASE + ")";
+    return "[![" + badgeAlt(p) + "](" + img + ")](" + CANONICAL_BASE + ")";
+  }
+
+  function badgeEmbedHtml(p) {
+    return (
+      '<div class="badge-embed"><img src="badges/' + escapeHtml(p.full_name.replace("/", "--")) + '.svg" alt="' + escapeHtml(badgeAlt(p)) + '">' +
+      "<code>" + escapeHtml(badgeMarkdown(p)) + "</code>" +
+      '<button class="copy-badge" data-md="' + escapeHtml(badgeMarkdown(p)) + '">copy</button></div>'
+    );
   }
 
   function sameDataAnalyses(p) {
@@ -175,9 +187,7 @@
     if (p.verified) {
       html +=
         '<div class="detail-section"><span class="detail-label">Verification badge</span>' +
-        '<div class="badge-embed"><img src="badges/' + escapeHtml(p.full_name.replace("/", "--")) + '.svg" alt="ASTRA verified">' +
-        "<code>" + escapeHtml(badgeMarkdown(p)) + "</code>" +
-        '<button class="copy-badge" data-md="' + escapeHtml(badgeMarkdown(p)) + '">copy</button></div></div>';
+        badgeEmbedHtml(p) + "</div>";
     } else {
       var reasons = (p.verification_errors || [])
         .slice(0, 4)
@@ -187,6 +197,7 @@
         '<div class="detail-section"><span class="detail-label">Verification</span>' +
         '<p class="verify-note">Indexed, but the spec does not pass ASTRA validation:</p>' +
         (reasons ? '<ul class="verify-errors">' + reasons + "</ul>" : "") +
+        badgeEmbedHtml(p) +
         "</div>";
     }
 
