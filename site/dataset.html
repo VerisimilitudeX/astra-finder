@@ -69,10 +69,11 @@
         var rows = occ
           .map(function (o) {
             var raw = "https://raw.githubusercontent.com/" + o.repo + "/" + o.branch + "/" + o.path;
+            var repoPage = "repo.html?r=" + encodeURIComponent(o.repo);
             return (
               "<tr>" +
-              '<td><a class="link-btn" href="./#index">' + escapeHtml(o.analysis) + "</a>" +
-              '<span class="occ-repo">' + escapeHtml(o.repo) + "</span></td>" +
+              '<td><a class="link-btn" href="' + escapeHtml(repoPage) + '">' + escapeHtml(o.analysis) + "</a>" +
+              '<a class="occ-repo" href="' + escapeHtml(repoPage) + '">' + escapeHtml(o.repo) + "</a></td>" +
               '<td><span class="role role-' + escapeHtml(o.role) + '">' + escapeHtml(o.role) + "</span></td>" +
               '<td class="occ-path">' + escapeHtml(o.path) + "</td>" +
               '<td><a class="raw-link" href="' + escapeHtml(raw) + '" target="_blank" rel="noopener">Open raw file ↗</a></td>' +
